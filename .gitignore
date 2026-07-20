@@ -1,0 +1,18 @@
+# Gradle
+.gradle/
+**/build/
+
+# IDE
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# Локальные конфиги и секреты (в git не попадают)
+**/local.properties
+**/secrets.properties
+*.env
+
+# OS
+.DS_Store
+Thumbs.db
