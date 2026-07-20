@@ -22,17 +22,24 @@ import java.util.UUID
 object EntryRepository {
 
     /** Список записей пользователя с необязательными фильтрами: период (from/to) и проект. */
-    fun list(userId: UUID, from: LocalDate?, to: LocalDate?, projectId: UUID?): List<EntryDto> = transaction {
-        val query = Entries.selectAll().where { Entries.userId eq userId }
-        if (from != null) query.andWhere { Entries.occurredOn greaterEq from }
-        if (to != null) query.andWhere { Entries.occurredOn lessEq to }
-        if (projectId != null) query.andWhere { Entries.projectId eq projectId }
-        query.orderBy(Entries.occurredOn to SortOrder.DESC, Entries.createdAt to SortOrder.DESC)
-            .map { it.toEntryDto() }
+    fun list(userId: UUID, from: LocalDate?, to: LocalDate?, projectId: UUID?): List<EntryDto> {
+        val base = transaction {
+            val query = Entries.selectAll().where { Entries.userId eq userId }
+            if (from != null) query.andWhere { Entries.occurredOn greaterEq from }
+            if (to != null) query.andWhere { Entries.occurredOn lessEq to }
+            if (projectId != null) query.andWhere { Entries.projectId eq projectId }
+            query.orderBy(Entries.occurredOn to SortOrder.DESC, Entries.createdAt to SortOrder.DESC)
+                .map { it.toEntryDto() }
+        }
+        if (base.isEmpty()) return base
+        // Подтянуть структуру ИИ одним запросом и приклеить к записям.
+        val structured = EntryStructuredRepository.forEntries(base.map { UUID.fromString(it.id) })
+        return base.map { it.copy(structured = structured[UUID.fromString(it.id)]) }
     }
 
-    fun getById(userId: UUID, id: UUID): EntryDto? = transaction {
-        findInTx(userId, id)
+    fun getById(userId: UUID, id: UUID): EntryDto? {
+        val base = transaction { findInTx(userId, id) } ?: return null
+        return base.copy(structured = EntryStructuredRepository.forEntry(id))
     }
 
     fun create(userId: UUID, body: NewEntry): EntryDto = transaction {
@@ -54,15 +61,18 @@ object EntryRepository {
     }
 
     /** Частичная правка: меняем только переданные (не-null) поля. */
-    fun update(userId: UUID, id: UUID, body: UpdateEntry): EntryDto? = transaction {
-        val changed = Entries.update({ (Entries.id eq id) and (Entries.userId eq userId) }) {
-            if (body.rawText != null) it[rawText] = body.rawText
-            if (body.occurredOn != null) it[occurredOn] = LocalDate.parse(body.occurredOn)
-            if (body.timeSpentMin != null) it[timeSpentMin] = body.timeSpentMin
-            if (body.projectId != null) it[projectId] = UUID.fromString(body.projectId)
-            it[updatedAt] = Instant.now()
-        }
-        if (changed == 0) null else findInTx(userId, id)
+    fun update(userId: UUID, id: UUID, body: UpdateEntry): EntryDto? {
+        val base = transaction {
+            val changed = Entries.update({ (Entries.id eq id) and (Entries.userId eq userId) }) {
+                if (body.rawText != null) it[rawText] = body.rawText
+                if (body.occurredOn != null) it[occurredOn] = LocalDate.parse(body.occurredOn)
+                if (body.timeSpentMin != null) it[timeSpentMin] = body.timeSpentMin
+                if (body.projectId != null) it[projectId] = UUID.fromString(body.projectId)
+                it[updatedAt] = Instant.now()
+            }
+            if (changed == 0) null else findInTx(userId, id)
+        } ?: return null
+        return base.copy(structured = EntryStructuredRepository.forEntry(id))
     }
 
     fun delete(userId: UUID, id: UUID): Boolean = transaction {

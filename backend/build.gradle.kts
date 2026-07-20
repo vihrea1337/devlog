@@ -45,7 +45,6 @@ dependencies {
     implementation("org.jetbrains.exposed:exposed-core:$exposedVersion")      // ядро: типы колонок, DSL
     implementation("org.jetbrains.exposed:exposed-jdbc:$exposedVersion")      // мост Exposed → JDBC (выполнение запросов)
     implementation("org.jetbrains.exposed:exposed-java-time:$exposedVersion") // колонки дата/время (java.time)
-    implementation("org.jetbrains.exposed:exposed-json:$exposedVersion")      // jsonb-колонки (массивы шагов/тегов)
     // JDBC-драйвер PostgreSQL — как JVM физически общается именно с Postgres.
     implementation("org.postgresql:postgresql:42.7.4")
     // HikariCP — пул соединений: держит готовые подключения к БД и переиспользует их.
@@ -59,6 +58,11 @@ dependencies {
     implementation("at.favre.lib:bcrypt:0.10.2")
     // Единая обработка ошибок → аккуратные JSON-ответы вместо стектрейса.
     implementation("io.ktor:ktor-server-status-pages")
+
+    // --- HTTP-клиент для Groq (ИИ-обработка записей) ---
+    implementation("io.ktor:ktor-client-core")                // ядро клиента
+    implementation("io.ktor:ktor-client-cio")                 // движок: кто реально шлёт запросы
+    implementation("io.ktor:ktor-client-content-negotiation") // разбирать JSON-ответы Groq
 
     // Для тестов сервера (поднимают Ktor в памяти, без реального порта).
     testImplementation("io.ktor:ktor-server-test-host")

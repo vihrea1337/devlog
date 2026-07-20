@@ -35,15 +35,16 @@ data class UpdateEntry(
     val timeSpentMin: Int? = null,
 )
 
-/** Структурированная часть, которую заполнит ИИ (шаг 3б). */
+/** Структурированная часть, которую заполняет ИИ. Значения по умолчанию — чтобы
+ * устойчиво разбирать неполный JSON от модели (пропущенное поле = пусто). */
 @Serializable
 data class StructuredDto(
-    val summary: String,
-    val steps: List<String>,
-    val decisions: List<String>,
-    val problems: List<String>,
-    val outcome: String,
-    val tags: List<String>,
+    val summary: String = "",
+    val steps: List<String> = emptyList(),
+    val decisions: List<String> = emptyList(),
+    val problems: List<String> = emptyList(),
+    val outcome: String = "",
+    val tags: List<String> = emptyList(),
 )
 
 @Serializable
@@ -77,7 +78,8 @@ fun Route.entryRoutes() = authenticate("auth-jwt") {
             return@post
         }
         val saved = EntryRepository.create(call.userId(), body)
-        // TODO (шаг 3б): поставить запись в очередь на обработку ИИ (Claude API).
+        // Поставить запись в очередь на обработку ИИ (в фоне; без ключа Groq — просто пропустится).
+        AiProcessor.schedule(call.userId(), UUID.fromString(saved.id), saved.rawText)
         call.respond(saved)
     }
 
@@ -101,9 +103,14 @@ fun Route.entryRoutes() = authenticate("auth-jwt") {
 
     post("/api/entries/{id}/reprocess") {
         val id = call.entryId() ?: return@post call.respond(HttpStatusCode.BadRequest, ErrorResponse("Некорректный id"))
-        val ok = EntryRepository.setStatus(call.userId(), id, "queued")
-        // TODO (шаг 3б): перезапустить обработку ИИ.
-        call.respond(if (ok) HttpStatusCode.Accepted else HttpStatusCode.NotFound)
+        val entry = EntryRepository.getById(call.userId(), id)
+        if (entry == null) {
+            call.respond(HttpStatusCode.NotFound)
+            return@post
+        }
+        EntryRepository.setStatus(call.userId(), id, "queued")
+        AiProcessor.schedule(call.userId(), id, entry.rawText)
+        call.respond(HttpStatusCode.Accepted)
     }
 }
 

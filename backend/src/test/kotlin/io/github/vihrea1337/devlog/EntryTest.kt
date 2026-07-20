@@ -14,6 +14,7 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import io.ktor.server.testing.testApplication
 import kotlinx.serialization.json.Json
+import java.util.UUID
 import org.jetbrains.exposed.sql.Database
 import org.jetbrains.exposed.sql.SchemaUtils
 import org.jetbrains.exposed.sql.transactions.transaction
@@ -33,12 +34,12 @@ class EntryTest {
     @BeforeTest
     fun setup() {
         Database.connect("jdbc:h2:mem:devlog_entries;DB_CLOSE_DELAY=-1;MODE=PostgreSQL", driver = "org.h2.Driver")
-        transaction { SchemaUtils.create(Users, Projects, Entries) }
+        transaction { SchemaUtils.create(Users, Projects, Entries, EntryStructured) }
     }
 
     @AfterTest
     fun teardown() {
-        transaction { SchemaUtils.drop(Entries, Projects, Users) }
+        transaction { SchemaUtils.drop(EntryStructured, Entries, Projects, Users) }
     }
 
     private suspend fun registerToken(client: HttpClient, email: String): String {
@@ -118,6 +119,25 @@ class EntryTest {
 
         val directB = client.get("/api/entries/${entryA.id}") { header(HttpHeaders.Authorization, "Bearer $tokenB") }
         assertEquals(HttpStatusCode.NotFound, directB.status)
+    }
+
+    @Test
+    fun `структура ИИ отдаётся вместе с записью`() = testApplication {
+        application { module() }
+        val token = registerToken(client, "s@b.co")
+        val created = createEntry(client, token, "работал над задачей")
+
+        // Имитируем результат ИИ напрямую в БД (без сети и ключа).
+        EntryStructuredRepository.save(
+            UUID.fromString(created.id),
+            StructuredDto(summary = "суть", steps = listOf("шаг1", "шаг2"), outcome = "готово", tags = listOf("kotlin")),
+            "test-model",
+        )
+
+        val one = client.get("/api/entries/${created.id}") { header(HttpHeaders.Authorization, "Bearer $token") }
+        val dto = json.decodeFromString<EntryDto>(one.bodyAsText())
+        assertEquals("суть", dto.structured?.summary)
+        assertEquals(2, dto.structured?.steps?.size)
     }
 
     @Test

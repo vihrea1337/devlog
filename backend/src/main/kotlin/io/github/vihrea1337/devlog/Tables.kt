@@ -1,11 +1,9 @@
 package io.github.vihrea1337.devlog
 
-import kotlinx.serialization.json.Json
 import org.jetbrains.exposed.sql.ReferenceOption
 import org.jetbrains.exposed.sql.Table
 import org.jetbrains.exposed.sql.javatime.date
 import org.jetbrains.exposed.sql.javatime.timestamp
-import org.jetbrains.exposed.sql.json.jsonb
 
 /**
  * Схема базы данных (чертёж таблиц). Каждый `object : Table` = одна таблица в PostgreSQL.
@@ -14,9 +12,6 @@ import org.jetbrains.exposed.sql.json.jsonb
  * Важно: это НЕ данные, а описание структуры. Exposed по нему умеет и создать таблицы
  * (SchemaUtils.create), и строить типобезопасные запросы.
  */
-
-/** Общий JSON для jsonb-колонок (массивы строк: шаги, решения, теги). */
-private val jsonFormat = Json { ignoreUnknownKeys = true }
 
 /** Пользователи (аккаунты). С них начинается изоляция: каждый видит только своё. */
 object Users : Table("users") {
@@ -62,15 +57,17 @@ object Entries : Table("entries") {
     }
 }
 
-/** Что ИИ извлёк из записи (связь один-к-одному с entries). jsonb — массивы строк. */
+/** Что ИИ извлёк из записи (связь один-к-одному с entries). */
 object EntryStructured : Table("entry_structured") {
     val entryId = reference("entry_id", Entries.id, onDelete = ReferenceOption.CASCADE)
     val summary = text("summary")                         // суть одной фразой
-    val steps = jsonb<List<String>>("steps", jsonFormat)
-    val decisions = jsonb<List<String>>("decisions", jsonFormat)
-    val problems = jsonb<List<String>>("problems", jsonFormat)
+    // Массивы (шаги/решения/проблемы/теги) храним JSON-строкой в text — просто и переносимо
+    // (одинаково на Postgres и на H2 в тестах); кодирование/декодирование — в репозитории.
+    val steps = text("steps")
+    val decisions = text("decisions")
+    val problems = text("problems")
     val outcome = text("outcome")
-    val tags = jsonb<List<String>>("tags", jsonFormat)
+    val tags = text("tags")
     val aiModel = varchar("ai_model", 60)                 // какая модель обработала
     val processedAt = timestamp("processed_at")
     override val primaryKey = PrimaryKey(entryId)         // тот же id, что у записи
