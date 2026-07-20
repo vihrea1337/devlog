@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DevLog — дневник разработчика</title>
+<style>
+  :root {
+    --bg: #f5f6f8; --card: #ffffff; --ink: #1c2330; --muted: #6b7382;
+    --line: #e3e6ec; --accent: #3b6ef5; --accent-ink: #fff;
+    --ok: #1f9d55; --warn: #b7791f; --err: #d64545;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg); color: var(--ink); line-height: 1.5; }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 20px 16px 60px; }
+  header.top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+  header.top h1 { font-size: 20px; margin: 0; }
+  .muted { color: var(--muted); }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-bottom: 14px; }
+  label { display: block; font-size: 13px; color: var(--muted); margin: 8px 0 4px; }
+  input, textarea, button, select { font: inherit; }
+  input, textarea { width: 100%; padding: 9px 11px; border: 1px solid var(--line); border-radius: 8px;
+    background: #fff; color: var(--ink); }
+  textarea { resize: vertical; min-height: 76px; }
+  button { cursor: pointer; border: none; border-radius: 8px; padding: 9px 14px; font-weight: 600; }
+  button.primary { background: var(--accent); color: var(--accent-ink); }
+  button.ghost { background: transparent; color: var(--muted); border: 1px solid var(--line); padding: 6px 10px; font-weight: 500; }
+  button:disabled { opacity: .55; cursor: default; }
+  .row { display: flex; gap: 10px; }
+  .row > * { flex: 1; }
+  .day { font-size: 13px; font-weight: 700; color: var(--muted); margin: 18px 2px 8px; text-transform: uppercase; letter-spacing: .03em; }
+  .entry .raw { white-space: pre-wrap; }
+  .badge { display: inline-block; font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 20px; }
+  .b-queued, .b-processing { background: #fdf3e2; color: var(--warn); }
+  .b-structured { background: #e7f6ec; color: var(--ok); }
+  .b-failed { background: #fbe9e9; color: var(--err); }
+  .b-draft { background: #eef0f4; color: var(--muted); }
+  .struct { margin-top: 10px; border-top: 1px dashed var(--line); padding-top: 10px; }
+  .struct h4 { margin: 8px 0 2px; font-size: 13px; }
+  .struct ul { margin: 2px 0 0; padding-left: 18px; }
+  .tags { margin-top: 8px; }
+  .tag { display: inline-block; background: #eef2fe; color: var(--accent); font-size: 12px; padding: 2px 8px; border-radius: 6px; margin: 2px 4px 0 0; }
+  .entry-actions { margin-top: 10px; display: flex; gap: 8px; }
+  .err { color: var(--err); font-size: 13px; min-height: 18px; }
+  .switch { text-align: center; margin-top: 10px; font-size: 14px; }
+  a.link { color: var(--accent); cursor: pointer; text-decoration: none; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- Экран входа/регистрации -->
+  <section id="auth">
+    <header class="top"><h1>DevLog</h1></header>
+    <div class="card">
+      <div id="authTitle" style="font-weight:700; margin-bottom:6px;">Вход</div>
+      <div id="nameField" class="hidden">
+        <label>Имя</label>
+        <input id="name" placeholder="Как вас звать">
+      </div>
+      <label>Email</label>
+      <input id="email" type="email" placeholder="you@example.com" autocomplete="username">
+      <label>Пароль</label>
+      <input id="password" type="password" placeholder="минимум 6 символов" autocomplete="current-password">
+      <div class="err" id="authErr"></div>
+      <button class="primary" id="authBtn" style="width:100%; margin-top:6px;">Войти</button>
+      <div class="switch">
+        <span id="switchText">Нет аккаунта?</span>
+        <a class="link" id="switchLink">Зарегистрироваться</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Основной экран -->
+  <section id="app" class="hidden">
+    <header class="top">
+      <h1>DevLog</h1>
+      <div><span class="muted" id="who"></span> &nbsp; <button class="ghost" id="logout">Выйти</button></div>
+    </header>
+
+    <div class="card">
+      <div style="font-weight:700; margin-bottom:4px;">Что сделал сегодня?</div>
+      <div class="muted" style="font-size:13px;">Бросьте сюда сырые заметки — ИИ разберёт их на шаги, решения и итог.</div>
+      <label>Дата работы</label>
+      <input id="occurredOn" type="date">
+      <label>Заметка</label>
+      <textarea id="rawText" placeholder="Напр.: чинил баг с виджетом — updateAll не звался при смене города, поправил, собрал v1.0.1"></textarea>
+      <div class="err" id="addErr"></div>
+      <button class="primary" id="addBtn" style="margin-top:6px;">Добавить запись</button>
+    </div>
+
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+      <div class="muted" style="font-size:13px;">Ваша лента</div>
+      <button class="ghost" id="refresh">Обновить</button>
+    </div>
+    <div id="feed"></div>
+  </section>
+
+</div>
+
+<script>
+  const TOKEN_KEY = 'devlog_token';
+  const getToken = () => localStorage.getItem(TOKEN_KEY);
+  const setToken = t => localStorage.setItem(TOKEN_KEY, t);
+  const clearToken = () => localStorage.removeItem(TOKEN_KEY);
+
+  let mode = 'login'; // login | register
+  let refreshTimer = null;
+
+  // --- Обёртка над fetch: добавляет токен и JSON-заголовки ---
+  async function api(path, { method = 'GET', body = null } = {}) {
+    const headers = {};
+    if (body) headers['Content-Type'] = 'application/json';
+    const t = getToken();
+    if (t) headers['Authorization'] = 'Bearer ' + t;
+    return fetch(path, { method, headers, body: body ? JSON.stringify(body) : null });
+  }
+
+  const esc = s => (s ?? '').replace(/[&<>"]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
+  const $ = id => document.getElementById(id);
+
+  // --- Переключение login/register ---
+  function setMode(m) {
+    mode = m;
+    $('authTitle').textContent = m === 'login' ? 'Вход' : 'Регистрация';
+    $('authBtn').textContent = m === 'login' ? 'Войти' : 'Создать аккаунт';
+    $('nameField').classList.toggle('hidden', m === 'login');
+    $('switchText').textContent = m === 'login' ? 'Нет аккаунта?' : 'Уже есть аккаунт?';
+    $('switchLink').textContent = m === 'login' ? 'Зарегистрироваться' : 'Войти';
+    $('authErr').textContent = '';
+  }
+  $('switchLink').onclick = () => setMode(mode === 'login' ? 'register' : 'login');
+
+  // --- Вход / регистрация ---
+  $('authBtn').onclick = async () => {
+    const email = $('email').value.trim();
+    const password = $('password').value;
+    $('authErr').textContent = '';
+    const path = mode === 'login' ? '/api/auth/login' : '/api/auth/register';
+    const body = mode === 'login'
+      ? { email, password }
+      : { email, password, displayName: $('name').value.trim() };
+    try {
+      const res = await api(path, { method: 'POST', body });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { $('authErr').textContent = data.error || 'Ошибка (' + res.status + ')'; return; }
+      setToken(data.token);
+      showApp(data.user);
+    } catch (e) {
+      $('authErr').textContent = 'Сеть недоступна';
+    }
+  };
+
+  $('logout').onclick = () => { clearToken(); location.reload(); };
+
+  // --- Добавление записи ---
+  $('addBtn').onclick = async () => {
+    const rawText = $('rawText').value.trim();
+    $('addErr').textContent = '';
+    if (!rawText) { $('addErr').textContent = 'Напишите, что сделали'; return; }
+    $('addBtn').disabled = true;
+    try {
+      const res = await api('/api/entries', {
+        method: 'POST',
+        body: { occurredOn: $('occurredOn').value, rawText },
+      });
+      if (res.ok) { $('rawText').value = ''; await loadEntries(); }
+      else $('addErr').textContent = 'Не удалось сохранить (' + res.status + ')';
+    } finally {
+      $('addBtn').disabled = false;
+    }
+  };
+
+  $('refresh').onclick = loadEntries;
+
+  const STATUS = {
+    queued: ['в очереди', 'b-queued'], processing: ['обрабатывается…', 'b-processing'],
+    structured: ['готово', 'b-structured'], failed: ['ошибка ИИ', 'b-failed'], draft: ['черновик', 'b-draft'],
+  };
+
+  function structuredHtml(s) {
+    if (!s) return '';
+    const list = (title, arr) => (arr && arr.length)
+      ? `<h4>${title}</h4><ul>${arr.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : '';
+    const tags = (s.tags && s.tags.length)
+      ? `<div class="tags">${s.tags.map(t => `<span class="tag">${esc(t)}</span>`).join('')}</div>` : '';
+    return `<div class="struct">
+      ${s.summary ? `<div><b>${esc(s.summary)}</b></div>` : ''}
+      ${list('Шаги', s.steps)}
+      ${list('Решения', s.decisions)}
+      ${list('Проблемы', s.problems)}
+      ${s.outcome ? `<h4>Итог</h4><div>${esc(s.outcome)}</div>` : ''}
+      ${tags}
+    </div>`;
+  }
+
+  function entryHtml(e) {
+    const [label, cls] = STATUS[e.status] || [e.status, 'b-draft'];
+    return `<div class="card entry" data-id="${e.id}">
+      <div style="display:flex; justify-content:space-between; gap:10px;">
+        <div class="raw">${esc(e.rawText)}</div>
+        <span class="badge ${cls}">${label}</span>
+      </div>
+      ${structuredHtml(e.structured)}
+      <div class="entry-actions">
+        <button class="ghost act-reprocess">Переобработать</button>
+        <button class="ghost act-delete">Удалить</button>
+      </div>
+    </div>`;
+  }
+
+  async function loadEntries() {
+    if (refreshTimer) { clearTimeout(refreshTimer); refreshTimer = null; }
+    const res = await api('/api/entries');
+    if (res.status === 401) { clearToken(); location.reload(); return; }
+    const entries = await res.json();
+    const feed = $('feed');
+    if (!entries.length) { feed.innerHTML = '<div class="muted" style="margin-top:14px;">Пока пусто. Добавьте первую запись выше.</div>'; return; }
+    let html = '', lastDay = null;
+    for (const e of entries) {
+      if (e.occurredOn !== lastDay) { html += `<div class="day">${esc(e.occurredOn)}</div>`; lastDay = e.occurredOn; }
+      html += entryHtml(e);
+    }
+    feed.innerHTML = html;
+    // Кнопки на карточках.
+    feed.querySelectorAll('.entry').forEach(card => {
+      const id = card.dataset.id;
+      card.querySelector('.act-delete').onclick = async () => {
+        if (!confirm('Удалить запись?')) return;
+        await api('/api/entries/' + id, { method: 'DELETE' });
+        loadEntries();
+      };
+      card.querySelector('.act-reprocess').onclick = async () => {
+        await api('/api/entries/' + id + '/reprocess', { method: 'POST' });
+        loadEntries();
+      };
+    });
+    // Если что-то ещё обрабатывается ИИ — обновим ленту сами через несколько секунд.
+    if (entries.some(e => e.status === 'queued' || e.status === 'processing')) {
+      refreshTimer = setTimeout(loadEntries, 4000);
+    }
+  }
+
+  function showApp(user) {
+    $('auth').classList.add('hidden');
+    $('app').classList.remove('hidden');
+    $('who').textContent = user ? user.displayName : '';
+    $('occurredOn').value = new Date().toISOString().slice(0, 10);
+    loadEntries();
+  }
+
+  // --- Старт: если есть токен — проверим его через /api/me ---
+  (async function init() {
+    setMode('login');
+    if (!getToken()) return;
+    const res = await api('/api/me');
+    if (res.ok) showApp(await res.json());
+    else clearToken();
+  })();
+</script>
+</body>
+</html>

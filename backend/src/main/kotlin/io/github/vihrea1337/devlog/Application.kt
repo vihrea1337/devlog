@@ -8,6 +8,7 @@ import io.ktor.server.auth.Authentication
 import io.ktor.server.auth.jwt.JWTPrincipal
 import io.ktor.server.auth.jwt.jwt
 import io.ktor.server.engine.embeddedServer
+import io.ktor.server.http.content.staticResources
 import io.ktor.server.netty.Netty
 import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.server.plugins.statuspages.StatusPages
@@ -75,6 +76,8 @@ fun Application.module() {
         authRoutes()
         // CRUD записей (все под токеном).
         entryRoutes()
+        // Веб-страница из resources/static (index.html). Данные за ней всё равно под токеном.
+        staticResources("/", "static")
     }
 }
 
