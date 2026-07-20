@@ -51,7 +51,18 @@ dependencies {
     // HikariCP — пул соединений: держит готовые подключения к БД и переиспользует их.
     implementation("com.zaxxer:HikariCP:6.2.1")
 
+    // --- Авторизация ---
+    // JWT (JSON Web Token): выдаём токен при входе и проверяем его на защищённых ручках.
+    implementation("io.ktor:ktor-server-auth")
+    implementation("io.ktor:ktor-server-auth-jwt")
+    // Хеширование паролей (bcrypt) — в базе храним только хеш, не сам пароль.
+    implementation("at.favre.lib:bcrypt:0.10.2")
+    // Единая обработка ошибок → аккуратные JSON-ответы вместо стектрейса.
+    implementation("io.ktor:ktor-server-status-pages")
+
     // Для тестов сервера (поднимают Ktor в памяти, без реального порта).
     testImplementation("io.ktor:ktor-server-test-host")
     testImplementation(kotlin("test"))
+    // H2 — встроенная база «в памяти»: тестируем авторизацию на настоящем SQL без Postgres/Docker.
+    testImplementation("com.h2database:h2:2.2.224")
 }
