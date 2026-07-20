@@ -1,0 +1,23 @@
+# Локальная база для разработки DevLog.
+# Поднять:   docker compose up -d
+# Остановить: docker compose stop
+# Логи:       docker compose logs -f devlog-pg
+#
+# Порт наружу 5433 (внутри контейнера всё равно 5432), чтобы не конфликтовать
+# с expenses-pg. Данные хранятся в именованном томе и переживают перезапуск.
+services:
+  devlog-pg:
+    image: postgres:16
+    container_name: devlog-pg
+    environment:
+      POSTGRES_DB: devlog
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: dev
+    ports:
+      - "5433:5432"
+    volumes:
+      - devlog-pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+
+volumes:
+  devlog-pgdata:

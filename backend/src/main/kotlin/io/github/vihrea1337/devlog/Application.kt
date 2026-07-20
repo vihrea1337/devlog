@@ -20,6 +20,8 @@ import kotlinx.serialization.Serializable
  * (пригодится в Docker: внутри контейнера надо слушать 0.0.0.0).
  */
 fun main() {
+    // Подключиться к базе и создать таблицы (если их ещё нет) ДО старта сервера.
+    configureDatabase()
     val port = System.getenv("PORT")?.toIntOrNull() ?: 8080
     val host = System.getenv("HOST") ?: "127.0.0.1"
     embeddedServer(Netty, port = port, host = host) {
