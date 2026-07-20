@@ -73,6 +73,8 @@ fun Application.module() {
         }
         // Регистрация/вход (открыты) и /api/me (под токеном).
         authRoutes()
+        // CRUD записей (все под токеном).
+        entryRoutes()
     }
 }
 
