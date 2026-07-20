@@ -76,6 +76,8 @@ fun Application.module() {
         authRoutes()
         // CRUD записей (все под токеном).
         entryRoutes()
+        // Отчёты (под токеном) + публичный просмотр по ссылке /r/{token}.
+        reportRoutes()
         // Веб-страница из resources/static (index.html). Данные за ней всё равно под токеном.
         staticResources("/", "static")
     }

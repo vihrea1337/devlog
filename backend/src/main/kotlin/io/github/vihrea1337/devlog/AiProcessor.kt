@@ -93,6 +93,10 @@ object AiProcessor {
     fun schedule(userId: UUID, entryId: UUID, rawText: String) {
         if (!enabled || rawText.isBlank()) return
         scope.launch {
+            if (!AiLimiter.tryConsume(userId)) {
+                println("Лимит ИИ на сегодня исчерпан — запись остаётся в статусе 'queued'.")
+                return@launch
+            }
             EntryRepository.setStatus(userId, entryId, "processing")
             val structured = runCatching { requestStructured(rawText) }.getOrNull()
             if (structured != null) {
@@ -134,6 +138,38 @@ object AiProcessor {
         if (start < 0 || end <= start) return null
         val jsonText = content.substring(start, end + 1)
         return runCatching { parseJson.decodeFromString<StructuredDto>(jsonText) }.getOrNull()
+    }
+
+    private val reportPrompt = """
+        Ты редактор. Ниже — черновик отчёта разработчика о проделанной за период работе.
+        Перепиши его в связный, аккуратный отчёт для работодателя на русском в формате Markdown:
+        сохрани ВСЕ факты и даты, добавь короткое вступление и итоговый абзац, используй
+        заголовки и списки. Ответь ТОЛЬКО Markdown, без пояснений вокруг.
+    """.trimIndent()
+
+    /** Причесать черновик отчёта через ИИ. null → используем черновик как есть. */
+    suspend fun polishReport(userId: UUID, baselineMarkdown: String): String? {
+        if (!enabled || !AiLimiter.tryConsume(userId)) return null
+        return try {
+            val response: GroqResponse = client.post(GROQ_URL) {
+                header(HttpHeaders.Authorization, "Bearer $apiKey")
+                contentType(ContentType.Application.Json)
+                setBody(
+                    GroqRequest(
+                        model = model,
+                        messages = listOf(
+                            GroqMessage("system", reportPrompt),
+                            GroqMessage("user", baselineMarkdown),
+                        ),
+                        temperature = 0.4,
+                    ),
+                )
+            }.body()
+            response.choices.firstOrNull()?.message?.content?.trim()?.ifEmpty { null }
+        } catch (e: Exception) {
+            println("Отчёт: ошибка запроса к Groq — ${e.message}")
+            null
+        }
     }
 
     private fun readSecret(key: String): String? {

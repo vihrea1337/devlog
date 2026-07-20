@@ -93,9 +93,26 @@
 
     <div style="display:flex; justify-content:space-between; align-items:center;">
       <div class="muted" style="font-size:13px;">Ваша лента</div>
-      <button class="ghost" id="refresh">Обновить</button>
+      <div style="display:flex; gap:8px;">
+        <button class="ghost" id="reportBtn">Отчёт за месяц</button>
+        <button class="ghost" id="refresh">Обновить</button>
+      </div>
     </div>
     <div id="feed"></div>
+
+    <!-- Панель отчёта -->
+    <div id="reportPanel" class="card hidden">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <b id="reportTitle">Отчёт</b>
+        <button class="ghost" id="reportClose">Закрыть</button>
+      </div>
+      <pre id="reportBody" style="white-space:pre-wrap; background:#f5f6f8; padding:12px; border-radius:8px; overflow-x:auto; margin-top:10px;"></pre>
+      <div class="entry-actions">
+        <button class="ghost" id="reportShare">Поделиться ссылкой</button>
+        <button class="ghost" id="reportDownload">Скачать .md</button>
+      </div>
+      <div id="reportLink" class="muted" style="font-size:13px; margin-top:6px;"></div>
+    </div>
   </section>
 
 </div>
@@ -250,6 +267,49 @@
     $('occurredOn').value = new Date().toISOString().slice(0, 10);
     loadEntries();
   }
+
+  // --- Отчёт за текущий месяц ---
+  let currentReport = null;
+  const ymd = d => d.toISOString().slice(0, 10);
+
+  $('reportBtn').onclick = async () => {
+    const now = new Date();
+    const from = ymd(new Date(now.getFullYear(), now.getMonth(), 1));
+    const to = ymd(now);
+    $('reportBtn').disabled = true;
+    try {
+      const res = await api('/api/reports', { method: 'POST', body: { periodStart: from, periodEnd: to } });
+      if (!res.ok) { alert('Не удалось собрать отчёт (' + res.status + ')'); return; }
+      currentReport = await res.json();
+      $('reportTitle').textContent = currentReport.title;
+      $('reportBody').textContent = currentReport.contentMd;
+      $('reportLink').textContent = '';
+      $('reportPanel').classList.remove('hidden');
+      $('reportPanel').scrollIntoView({ behavior: 'smooth' });
+    } finally {
+      $('reportBtn').disabled = false;
+    }
+  };
+
+  $('reportClose').onclick = () => $('reportPanel').classList.add('hidden');
+
+  $('reportShare').onclick = async () => {
+    if (!currentReport) return;
+    const res = await api('/api/reports/' + currentReport.id + '/share', { method: 'POST' });
+    if (!res.ok) return;
+    const data = await res.json();
+    const url = location.origin + data.url;
+    $('reportLink').innerHTML = 'Ссылка для работодателя: <a class="link" href="' + url + '" target="_blank">' + url + '</a>';
+  };
+
+  $('reportDownload').onclick = () => {
+    if (!currentReport) return;
+    const blob = new Blob([currentReport.contentMd], { type: 'text/markdown' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'devlog-report.md';
+    a.click();
+  };
 
   // --- Старт: если есть токен — проверим его через /api/me ---
   (async function init() {
