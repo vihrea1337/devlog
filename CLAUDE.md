@@ -35,7 +35,11 @@
 - **Фаза 2 начата: ✅ деплой на сервер брата (2026-07-22).** DevLog в проде:
   `https://vihreaschedule.duckdns.org:34444` (Docker: `devlog-pg` + `devlog-backend` + `devlog-caddy`,
   папка `/root/app/lev/devlog`, порт 34444). Деплой-файлы и runbook — в `deploy/server/`.
-- Дальше по Фазе 2: PDF-экспорт отчёта, проекты (CRUD), CI (GitHub Actions).
+- **Фаза 2: ✅ CI (GitHub Actions), ✅ проекты (CRUD + выключатель ИИ по проекту + веб).**
+  Осталось по Фазе 2: PDF-экспорт отчёта.
+- **Фаза 3 начата: ✅ Android-приложение (2026-07-22)** — `androidApp/` (обычное Android на
+  Compose + Retrofit, НЕ KMP пока): вход/регистрация (JWT), лента записей со статусом ИИ и
+  структурой, добавление/удаление/переобработка; ходит в боевой API, собирается в CI.
 
 ## Деплой / редеплой
 - Файлы: `deploy/server/` (docker-compose + Caddyfile + Dockerfile'ы + README-runbook).
@@ -49,3 +53,6 @@
   из `backend/`: `./gradlew buildFatJar` / `test` / `run`.
 - **Локальный запуск вживую:** поднять Docker Desktop → `docker compose -f backend/docker-compose.yml up -d`
   (Postgres `devlog-pg` на порту 5433) → `./gradlew -p backend run` → http://localhost:8080.
+- **Android:** из `androidApp/` c `JAVA_HOME=...jbr`, `.\gradlew.bat :app:assembleDebug`
+  (→ `app/build/outputs/apk/debug/app-debug.apk`). Адрес API — в `data/DevLogApi.kt` (`BASE_URL`).
+  SDK берётся из `androidApp/local.properties` (`sdk.dir`, в .gitignore).

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Тема приложения. Без action bar (шапку рисует сам Compose).
+         Берём платформенную тему, чтобы не тянуть лишних зависимостей. -->
+    <style name="Theme.DevLog" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:statusBarColor">@android:color/transparent</item>
+    </style>
+</resources>

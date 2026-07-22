@@ -35,6 +35,7 @@
 | Авторизация | JWT, bcrypt |
 | ИИ | Groq (OpenAI-совместимый API) |
 | Веб | HTML/CSS/JS без фреймворков (отдаётся бэкендом) |
+| Android | Kotlin, Jetpack Compose, Retrofit, kotlinx.serialization |
 | Деплой | Docker Compose, Caddy (HTTPS через DuckDNS), Let's Encrypt |
 | CI | GitHub Actions (тесты на H2 + сборка fat-jar) |
 
@@ -71,7 +72,8 @@ cd backend && ./gradlew test        # 27 интеграционных тесто
 
 - ✅ **Фаза 1** — MVP: веб, аккаунты, записи, ИИ-структуризация, отчёты (в проде).
 - 🔄 **Фаза 2** — качество: деплой ✅, CI ✅, проекты ✅, PDF-экспорт (в работе).
-- ⏳ **Фаза 3** — мобильный клиент (Android) через Kotlin Multiplatform.
+- 🔄 **Фаза 3** — мобильный клиент: Android-приложение ✅ (`androidApp/`, Compose + Retrofit,
+  вход/лента/ИИ-структура); дальше — переезд на общий Kotlin Multiplatform-модуль и офлайн-синхрон.
 - ⏳ **Фаза 4** — импорт коммитов GitHub/GitLab и выгрузок из чатов как сырья для ИИ.
 
 Подробности — в [`docs/`](docs/).
