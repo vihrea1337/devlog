@@ -32,7 +32,8 @@
 - [x] Шаринг отчёта по ссылке (`/r/{shareToken}`, без авторизации) — сделано досрочно в Фазе 1
 - [ ] Несколько проектов, фильтры ленты
 - [ ] Юнит- и интеграционные тесты + CI (GitHub Actions)
-- [ ] Деплой на сервер брата (Docker + Caddy + DuckDNS)
+- [x] Деплой на сервер брата (Docker + Caddy + DuckDNS) — **в проде** на
+  `https://vihreaschedule.duckdns.org:34444` (2026-07-22), файлы в `deploy/server/`
 
 ## Фаза 3 — Первый мобильный клиент (Android)
 - [ ] Общий KMP-модуль: модели + Ktor Client + SQLDelight

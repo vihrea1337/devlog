@@ -18,7 +18,9 @@
 
 ## Стек (зафиксирован)
 - **Бэкенд:** Kotlin + Ktor + PostgreSQL + Exposed + HikariCP.
-- **ИИ:** Claude API (Anthropic). Ключ только на сервере, обработка в фоне.
+- **ИИ:** Groq (OpenAI-совместимый API, бесплатно), модель `openai/gpt-oss-20b`. Ключ только
+  на сервере (`backend/secrets.properties` → `groq.api.key`, в .gitignore), обработка в фоне.
+  _(Изначально планировался Claude API — заменён на Groq ради бесплатности на старте.)_
 - **Клиенты:** Kotlin Multiplatform + Compose Multiplatform (Android/iOS/Desktop из общего кода).
   Веб на старте — HTML-страница, которую отдаёт сам бэкенд.
 - **Авторизация:** JWT, пароли хешируются, изоляция пользователей (multi-tenant) с Фазы 1.
@@ -26,7 +28,24 @@
   (порт из диапазона 34000–35000), по образцу Expenses.
 
 ## Статус
-- Фаза 0 (проектирование). Кода приложения ещё нет — только документы.
+- **Фаза 1 (MVP: веб + бэкенд) завершена и проверена вживую end-to-end (2026-07-22).**
+  Работает: регистрация/вход (JWT), CRUD записей, фоновая ИИ-структуризация (Groq),
+  отчёт за период (Markdown + ИИ-причёсывание), публичная ссылка на отчёт `/r/{token}`,
+  веб-страница. 20 тестов на H2 зелёные. Прогнано на реальном Postgres в Docker + Groq.
+- **Фаза 2 начата: ✅ деплой на сервер брата (2026-07-22).** DevLog в проде:
+  `https://vihreaschedule.duckdns.org:34444` (Docker: `devlog-pg` + `devlog-backend` + `devlog-caddy`,
+  папка `/root/app/lev/devlog`, порт 34444). Деплой-файлы и runbook — в `deploy/server/`.
+- Дальше по Фазе 2: PDF-экспорт отчёта, проекты (CRUD), CI (GitHub Actions).
 
-## Команды сборки (появятся в Фазе 1)
-- Бэкенд: `JAVA_HOME=C:\Program Files\Android\Android Studio\jbr`, `./gradlew buildFatJar` / `run`.
+## Деплой / редеплой
+- Файлы: `deploy/server/` (docker-compose + Caddyfile + Dockerfile'ы + README-runbook).
+- Секреты на сервере (не в git): `.env` (DB_PASSWORD, DUCKDNS_TOKEN, DEVLOG_DOMAIN, DEVLOG_PORT),
+  `devlog.env` (GROQ_API_KEY, JWT_SECRET). Домен — отдельный DuckDNS `vihreaschedule.duckdns.org`.
+- Обновить бэкенд: `gradlew buildFatJar` → `scp` jar в `/root/app/lev/devlog/backend/` →
+  на сервере `docker compose up -d --build devlog-backend`.
+
+## Команды сборки/запуска
+- **Сборка/тесты:** `JAVA_HOME=C:\Program Files\Android\Android Studio\jbr`,
+  из `backend/`: `./gradlew buildFatJar` / `test` / `run`.
+- **Локальный запуск вживую:** поднять Docker Desktop → `docker compose -f backend/docker-compose.yml up -d`
+  (Postgres `devlog-pg` на порту 5433) → `./gradlew -p backend run` → http://localhost:8080.

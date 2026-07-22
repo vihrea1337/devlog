@@ -1,0 +1,57 @@
+# DevLog на сервере брата (в /root/app/lev/devlog). Три контейнера в своей сети;
+# наружу торчит ТОЛЬКО Caddy на порту ${DEVLOG_PORT} (HTTPS). Стек брата и Expenses
+# не затрагиваем — свои имена контейнеров (devlog-*), своя сеть, свои тома.
+#
+# Порядок запуска — см. README.md рядом. Значения ${...} берутся из файла .env.
+services:
+  devlog-pg:
+    image: postgres:16
+    container_name: devlog-pg
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: devlog
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks: [devlog-net]
+
+  devlog-backend:
+    build: ./backend            # backend/Dockerfile + рядом devlog-backend-all.jar
+    container_name: devlog-backend
+    restart: unless-stopped
+    depends_on: [devlog-pg]
+    env_file:
+      - ./devlog.env            # секреты: GROQ_API_KEY, JWT_SECRET (+ по желанию GROQ_MODEL, AI_DAILY_LIMIT)
+    environment:                # БД и хост/порт задаём здесь (перекрывают env_file)
+      HOST: 0.0.0.0
+      PORT: "8080"
+      DB_URL: jdbc:postgresql://devlog-pg:5432/devlog
+      DB_USER: postgres
+      DB_PASSWORD: ${DB_PASSWORD}
+    networks: [devlog-net]
+
+  caddy:
+    build: ./caddy              # Caddy со встроенным модулем DuckDNS
+    container_name: devlog-caddy
+    restart: unless-stopped
+    depends_on: [devlog-backend]
+    ports:
+      - "${DEVLOG_PORT}:${DEVLOG_PORT}"
+    environment:
+      DUCKDNS_TOKEN: ${DUCKDNS_TOKEN}
+      DEVLOG_DOMAIN: ${DEVLOG_DOMAIN}
+      DEVLOG_PORT: ${DEVLOG_PORT}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [devlog-net]
+
+networks:
+  devlog-net:
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:

@@ -1,0 +1,5 @@
+# Секреты и собранный jar — НЕ в git.
+.env
+devlog.env
+backend/devlog-backend-all.jar
+*.jar
