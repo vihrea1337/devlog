@@ -78,8 +78,15 @@ fun Route.entryRoutes() = authenticate("auth-jwt") {
             return@post
         }
         val saved = EntryRepository.create(call.userId(), body)
-        // Поставить запись в очередь на обработку ИИ (в фоне; без ключа Groq — просто пропустится).
-        AiProcessor.schedule(call.userId(), UUID.fromString(saved.id), saved.rawText)
+        val entryUuid = UUID.fromString(saved.id)
+        val projUuid = body.projectId?.let(UUID::fromString)
+        if (ProjectRepository.isAiEnabled(call.userId(), projUuid)) {
+            // Поставить запись в очередь на обработку ИИ (в фоне; без ключа Groq — просто пропустится).
+            AiProcessor.schedule(call.userId(), entryUuid, saved.rawText)
+        } else {
+            // Проект с выключенным ИИ (конфиденциально) — в Groq не отправляем, помечаем черновиком.
+            EntryRepository.setStatus(call.userId(), entryUuid, "draft")
+        }
         call.respond(saved)
     }
 
@@ -106,6 +113,13 @@ fun Route.entryRoutes() = authenticate("auth-jwt") {
         val entry = EntryRepository.getById(call.userId(), id)
         if (entry == null) {
             call.respond(HttpStatusCode.NotFound)
+            return@post
+        }
+        // Уважаем выключатель ИИ проекта: если он выключен — просто помечаем черновиком.
+        val projUuid = entry.projectId?.let(UUID::fromString)
+        if (!ProjectRepository.isAiEnabled(call.userId(), projUuid)) {
+            EntryRepository.setStatus(call.userId(), id, "draft")
+            call.respond(HttpStatusCode.Accepted)
             return@post
         }
         EntryRepository.setStatus(call.userId(), id, "queued")

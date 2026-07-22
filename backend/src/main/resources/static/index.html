@@ -20,9 +20,16 @@
   .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-bottom: 14px; }
   label { display: block; font-size: 13px; color: var(--muted); margin: 8px 0 4px; }
   input, textarea, button, select { font: inherit; }
-  input, textarea { width: 100%; padding: 9px 11px; border: 1px solid var(--line); border-radius: 8px;
+  input, textarea, select { width: 100%; padding: 9px 11px; border: 1px solid var(--line); border-radius: 8px;
     background: #fff; color: var(--ink); }
   textarea { resize: vertical; min-height: 76px; }
+  .proj { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600;
+    color: var(--muted); background: #eef0f4; padding: 2px 8px; border-radius: 6px; }
+  .proj .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  .proj-row { display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: 8px 0; border-bottom: 1px solid var(--line); }
+  .proj-row:last-child { border-bottom: none; }
+  .ai-off { font-size: 11px; color: var(--warn); background: #fdf3e2; padding: 1px 6px; border-radius: 5px; }
   button { cursor: pointer; border: none; border-radius: 8px; padding: 9px 14px; font-weight: 600; }
   button.primary { background: var(--accent); color: var(--accent-ink); }
   button.ghost { background: transparent; color: var(--muted); border: 1px solid var(--line); padding: 6px 10px; font-weight: 500; }
@@ -83,22 +90,53 @@
     <div class="card">
       <div style="font-weight:700; margin-bottom:4px;">Что сделал сегодня?</div>
       <div class="muted" style="font-size:13px;">Бросьте сюда сырые заметки — ИИ разберёт их на шаги, решения и итог.</div>
-      <label>Дата работы</label>
-      <input id="occurredOn" type="date">
+      <div class="row">
+        <div>
+          <label>Дата работы</label>
+          <input id="occurredOn" type="date">
+        </div>
+        <div>
+          <label>Проект</label>
+          <select id="entryProject"><option value="">— без проекта —</option></select>
+        </div>
+      </div>
       <label>Заметка</label>
       <textarea id="rawText" placeholder="Напр.: чинил баг с виджетом — updateAll не звался при смене города, поправил, собрал v1.0.1"></textarea>
       <div class="err" id="addErr"></div>
       <button class="primary" id="addBtn" style="margin-top:6px;">Добавить запись</button>
     </div>
 
-    <div style="display:flex; justify-content:space-between; align-items:center;">
-      <div class="muted" style="font-size:13px;">Ваша лента</div>
+    <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
+      <select id="feedFilter" style="max-width:220px;"><option value="">Все проекты</option></select>
       <div style="display:flex; gap:8px;">
+        <button class="ghost" id="projectsBtn">Проекты</button>
         <button class="ghost" id="reportBtn">Отчёт за месяц</button>
         <button class="ghost" id="refresh">Обновить</button>
       </div>
     </div>
     <div id="feed"></div>
+
+    <!-- Панель управления проектами -->
+    <div id="projectPanel" class="card hidden">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <b>Проекты</b>
+        <button class="ghost" id="projectClose">Закрыть</button>
+      </div>
+      <div class="muted" style="font-size:13px; margin-top:4px;">Группируйте записи по клиентам или продуктам. Для конфиденциального проекта можно выключить ИИ — его записи не отправляются на обработку.</div>
+      <div id="projectList" style="margin-top:8px;"></div>
+      <div class="row" style="margin-top:10px; align-items:flex-end;">
+        <div style="flex:2;">
+          <label>Название нового проекта</label>
+          <input id="newProjectName" placeholder="Напр.: Клиент Acme">
+        </div>
+        <div style="flex:0 0 auto; padding-bottom:9px;">
+          <label style="display:flex; align-items:center; gap:6px; margin:0; cursor:pointer;">
+            <input type="checkbox" id="newProjectAiOff" style="width:auto;"> ИИ выкл.
+          </label>
+        </div>
+      </div>
+      <button class="primary" id="addProjectBtn" style="margin-top:8px;">Добавить проект</button>
+    </div>
 
     <!-- Панель отчёта -->
     <div id="reportPanel" class="card hidden">
@@ -125,6 +163,7 @@
 
   let mode = 'login'; // login | register
   let refreshTimer = null;
+  let projects = [];  // проекты текущего пользователя
 
   // --- Обёртка над fetch: добавляет токен и JSON-заголовки ---
   async function api(path, { method = 'GET', body = null } = {}) {
@@ -181,7 +220,7 @@
     try {
       const res = await api('/api/entries', {
         method: 'POST',
-        body: { occurredOn: $('occurredOn').value, rawText },
+        body: { occurredOn: $('occurredOn').value, rawText, projectId: $('entryProject').value || null },
       });
       if (res.ok) { $('rawText').value = ''; await loadEntries(); }
       else $('addErr').textContent = 'Не удалось сохранить (' + res.status + ')';
@@ -196,6 +235,14 @@
     queued: ['в очереди', 'b-queued'], processing: ['обрабатывается…', 'b-processing'],
     structured: ['готово', 'b-structured'], failed: ['ошибка ИИ', 'b-failed'], draft: ['черновик', 'b-draft'],
   };
+
+  const projById = id => projects.find(p => p.id === id);
+  function projChipHtml(projectId) {
+    const p = projectId && projById(projectId);
+    if (!p) return '';
+    const color = p.color || 'var(--muted)';
+    return `<div style="margin-top:8px;"><span class="proj"><span class="dot" style="background:${esc(color)}"></span>${esc(p.name)}${p.aiEnabled ? '' : ' <span class="ai-off">ИИ выкл.</span>'}</span></div>`;
+  }
 
   function structuredHtml(s) {
     if (!s) return '';
@@ -220,6 +267,7 @@
         <div class="raw">${esc(e.rawText)}</div>
         <span class="badge ${cls}">${label}</span>
       </div>
+      ${projChipHtml(e.projectId)}
       ${structuredHtml(e.structured)}
       <div class="entry-actions">
         <button class="ghost act-reprocess">Переобработать</button>
@@ -230,7 +278,8 @@
 
   async function loadEntries() {
     if (refreshTimer) { clearTimeout(refreshTimer); refreshTimer = null; }
-    const res = await api('/api/entries');
+    const pid = $('feedFilter').value;
+    const res = await api('/api/entries' + (pid ? '?projectId=' + encodeURIComponent(pid) : ''));
     if (res.status === 401) { clearToken(); location.reload(); return; }
     const entries = await res.json();
     const feed = $('feed');
@@ -265,8 +314,71 @@
     $('app').classList.remove('hidden');
     $('who').textContent = user ? user.displayName : '';
     $('occurredOn').value = new Date().toISOString().slice(0, 10);
+    loadProjects();
     loadEntries();
   }
+
+  // --- Проекты ---
+  function fillProjectSelects() {
+    const optionsHtml = projects.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('');
+    const cur = $('entryProject').value;
+    $('entryProject').innerHTML = '<option value="">— без проекта —</option>' + optionsHtml;
+    $('entryProject').value = cur;
+    const curF = $('feedFilter').value;
+    $('feedFilter').innerHTML = '<option value="">Все проекты</option>' + optionsHtml;
+    $('feedFilter').value = curF;
+  }
+
+  function renderProjectList() {
+    const box = $('projectList');
+    if (!projects.length) { box.innerHTML = '<div class="muted" style="font-size:13px;">Пока нет проектов.</div>'; return; }
+    box.innerHTML = projects.map(p => {
+      const color = p.color || 'var(--muted)';
+      return `<div class="proj-row" data-id="${p.id}">
+        <span class="proj"><span class="dot" style="background:${esc(color)}"></span>${esc(p.name)}${p.aiEnabled ? '' : ' <span class="ai-off">ИИ выкл.</span>'}</span>
+        <button class="ghost proj-del">Удалить</button>
+      </div>`;
+    }).join('');
+    box.querySelectorAll('.proj-row').forEach(row => {
+      row.querySelector('.proj-del').onclick = async () => {
+        if (!confirm('Удалить проект? Записи останутся, но станут «без проекта».')) return;
+        await api('/api/projects/' + row.dataset.id, { method: 'DELETE' });
+        await loadProjects();
+        loadEntries();
+      };
+    });
+  }
+
+  async function loadProjects() {
+    const res = await api('/api/projects');
+    if (!res.ok) return;
+    projects = await res.json();
+    fillProjectSelects();
+    renderProjectList();
+  }
+
+  $('projectsBtn').onclick = () => $('projectPanel').classList.toggle('hidden');
+  $('projectClose').onclick = () => $('projectPanel').classList.add('hidden');
+  $('feedFilter').onchange = loadEntries;
+
+  $('addProjectBtn').onclick = async () => {
+    const name = $('newProjectName').value.trim();
+    if (!name) return;
+    $('addProjectBtn').disabled = true;
+    try {
+      const res = await api('/api/projects', {
+        method: 'POST',
+        body: { name, aiEnabled: !$('newProjectAiOff').checked },
+      });
+      if (res.ok) {
+        $('newProjectName').value = '';
+        $('newProjectAiOff').checked = false;
+        await loadProjects();
+      }
+    } finally {
+      $('addProjectBtn').disabled = false;
+    }
+  };
 
   // --- Отчёт за текущий месяц ---
   let currentReport = null;

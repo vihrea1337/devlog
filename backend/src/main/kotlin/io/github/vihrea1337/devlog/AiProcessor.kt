@@ -62,8 +62,12 @@ object AiProcessor {
     private val model: String =
         System.getenv("GROQ_MODEL")?.trim()?.ifEmpty { null } ?: readSecret("groq.model") ?: "openai/gpt-oss-20b"
 
-    /** Включён ли ИИ (есть ли ключ). Нет ключа → записи остаются "queued". */
-    val enabled: Boolean = apiKey.isNotEmpty()
+    // Тесты/CI принудительно выключают ИИ флагом -Ddevlog.ai.disabled=true, чтобы прогон был
+    // детерминированным и не ходил в Groq по сети (иначе фоновая обработка мешает тестам).
+    private val forceDisabled: Boolean = System.getProperty("devlog.ai.disabled") == "true"
+
+    /** Включён ли ИИ (есть ключ и не выключен принудительно). Иначе записи остаются "queued". */
+    val enabled: Boolean = apiKey.isNotEmpty() && !forceDisabled
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val parseJson = Json { ignoreUnknownKeys = true }

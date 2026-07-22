@@ -70,3 +70,9 @@ dependencies {
     // H2 — встроенная база «в памяти»: тестируем авторизацию на настоящем SQL без Postgres/Docker.
     testImplementation("com.h2database:h2:2.2.224")
 }
+
+tasks.test {
+    // В тестах ИИ выключен принудительно: детерминированно и без сетевых обращений к Groq
+    // (даже если рядом лежит secrets.properties с реальным ключом).
+    systemProperty("devlog.ai.disabled", "true")
+}
