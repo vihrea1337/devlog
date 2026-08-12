@@ -14,6 +14,9 @@ import java.util.UUID
 /** Потолок длины заметки: защищает базу и лимит обращений к ИИ от вставки на мегабайт. */
 const val MAX_RAW_TEXT_LENGTH = 20_000
 
+/** Потолок для текста отчёта: он собирается из многих записей, поэтому больше. */
+const val MAX_REPORT_LENGTH = 200_000
+
 fun parseDateOrNull(raw: String): LocalDate? = runCatching { LocalDate.parse(raw) }.getOrNull()
 
 fun parseUuidOrNull(raw: String): UUID? = runCatching { UUID.fromString(raw) }.getOrNull()

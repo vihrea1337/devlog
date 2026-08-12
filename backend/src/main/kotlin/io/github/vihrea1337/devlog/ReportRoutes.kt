@@ -8,8 +8,10 @@ import io.ktor.server.request.receive
 import io.ktor.server.response.respond
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.Route
+import io.ktor.server.routing.delete
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
+import io.ktor.server.routing.put
 import kotlinx.serialization.Serializable
 import java.util.UUID
 
@@ -35,7 +37,18 @@ data class ReportDto(
     val contentMd: String,
     val shareToken: String?,
     val createdAt: String,
+    /**
+     * Тот же отчёт, но уже в HTML — чтобы клиент показывал человеческий документ,
+     * а не исходник Markdown со звёздочками. Рендерим тем же кодом, что и публичную
+     * страницу `/r/{token}`, а не дублируем конвертер на JavaScript.
+     * (Значение по умолчанию считается от contentMd — писать его руками не нужно.)
+     */
+    val contentHtml: String = Markdown.toHtml(contentMd),
 )
+
+/** Тело PUT /api/reports/{id}: правка отчёта перед отправкой работодателю. */
+@Serializable
+data class UpdateReport(val contentMd: String, val title: String? = null)
 
 /** Ответ на «поделиться»: токен и относительная ссылка публичной страницы. */
 @Serializable
@@ -73,6 +86,25 @@ fun Route.reportRoutes() {
             if (report == null) call.respond(HttpStatusCode.NotFound) else call.respond(report)
         }
 
+        // Правка отчёта перед отправкой: формулировки ИИ можно поправить руками.
+        put("/api/reports/{id}") {
+            val id = call.reportId() ?: return@put call.badRequest("Некорректный id")
+            val body = call.receive<UpdateReport>()
+            val text = body.contentMd.trim()
+            if (text.isEmpty()) return@put call.badRequest("Текст отчёта пуст")
+            if (text.length > MAX_REPORT_LENGTH) {
+                return@put call.badRequest("Отчёт длиннее $MAX_REPORT_LENGTH символов")
+            }
+            val updated = ReportRepository.updateContent(call.userId(), id, text, body.title?.trim()?.take(200))
+            if (updated == null) call.respond(HttpStatusCode.NotFound) else call.respond(updated)
+        }
+
+        delete("/api/reports/{id}") {
+            val id = call.reportId() ?: return@delete call.badRequest("Некорректный id")
+            val removed = ReportRepository.delete(call.userId(), id)
+            call.respond(if (removed) HttpStatusCode.NoContent else HttpStatusCode.NotFound)
+        }
+
         // Включить публичную ссылку (для работодателя): выдаём/переиспользуем share-токен.
         post("/api/reports/{id}/share") {
             val id = call.reportId() ?: return@post call.badRequest("Некорректный id")
@@ -84,6 +116,21 @@ fun Route.reportRoutes() {
             val token = report.shareToken ?: UUID.randomUUID().toString().replace("-", "")
             if (report.shareToken == null) ReportRepository.setShareToken(call.userId(), id, token)
             call.respond(ShareResponse(token, "/r/$token"))
+        }
+
+        /**
+         * Отозвать публичную ссылку. Раньше выданная ссылка жила вечно: отдал отчёт
+         * одному работодателю — он остаётся доступен всем, кому эту ссылку переслали.
+         */
+        delete("/api/reports/{id}/share") {
+            val id = call.reportId() ?: return@delete call.badRequest("Некорректный id")
+            val report = ReportRepository.getById(call.userId(), id)
+            if (report == null) {
+                call.respond(HttpStatusCode.NotFound)
+                return@delete
+            }
+            ReportRepository.setShareToken(call.userId(), id, null)
+            call.respond(HttpStatusCode.NoContent)
         }
     }
 

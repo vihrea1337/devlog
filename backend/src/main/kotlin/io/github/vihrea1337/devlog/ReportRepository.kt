@@ -4,6 +4,7 @@ import org.jetbrains.exposed.sql.ResultRow
 import org.jetbrains.exposed.sql.SortOrder
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
 import org.jetbrains.exposed.sql.and
+import org.jetbrains.exposed.sql.deleteWhere
 import org.jetbrains.exposed.sql.insert
 import org.jetbrains.exposed.sql.selectAll
 import org.jetbrains.exposed.sql.update
@@ -52,10 +53,27 @@ object ReportRepository {
             .singleOrNull()
     }
 
-    fun setShareToken(userId: UUID, id: UUID, token: String): Boolean = transaction {
+    fun setShareToken(userId: UUID, id: UUID, token: String?): Boolean = transaction {
         Reports.update({ (Reports.id eq id) and (Reports.userId eq userId) }) {
             it[shareToken] = token
         } > 0
+    }
+
+    /**
+     * Заменить текст отчёта. Нужно, чтобы человек мог поправить формулировки ИИ
+     * ПЕРЕД отправкой работодателю: отчёт о своей работе не отдают не глядя.
+     */
+    fun updateContent(userId: UUID, id: UUID, contentMd: String, title: String?): ReportDto? = transaction {
+        val changed = Reports.update({ (Reports.id eq id) and (Reports.userId eq userId) }) {
+            it[Reports.contentMd] = contentMd
+            if (title != null) it[Reports.title] = title
+        }
+        if (changed == 0) null
+        else Reports.selectAll().where { Reports.id eq id }.map { it.toDto() }.singleOrNull()
+    }
+
+    fun delete(userId: UUID, id: UUID): Boolean = transaction {
+        Reports.deleteWhere { (Reports.id eq id) and (Reports.userId eq userId) } > 0
     }
 
     /** Публичный доступ по токену ссылки — БЕЗ фильтра по пользователю (ссылку знает получатель). */

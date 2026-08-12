@@ -70,6 +70,17 @@
   .day-chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600;
     background: #eef2fe; color: var(--accent); padding: 3px 9px; border-radius: 6px; cursor: pointer; }
   .counter-over { color: var(--err); font-weight: 600; }
+  /* Предпросмотр отчёта: показываем готовый документ, а не исходник Markdown. */
+  .report-preview { margin-top: 10px; padding: 14px 16px; background: #fbfcfe; border: 1px solid var(--line);
+    border-radius: 8px; max-height: 420px; overflow-y: auto; }
+  .report-preview h1 { font-size: 19px; margin: 0 0 8px; }
+  .report-preview h2 { font-size: 15px; margin: 16px 0 4px; }
+  .report-preview h3 { font-size: 14px; margin: 12px 0 2px; }
+  .report-preview ul { margin: 4px 0; padding-left: 20px; }
+  .report-preview p { margin: 6px 0; }
+  .rep-row { display: flex; justify-content: space-between; align-items: center; gap: 10px;
+    padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+  .rep-row:last-child { border-bottom: none; }
   .edit-box { width: 100%; }
   .switch { text-align: center; margin-top: 10px; font-size: 14px; }
   a.link { color: var(--accent); cursor: pointer; text-decoration: none; }
@@ -150,7 +161,7 @@
       <select id="feedFilter" style="max-width:220px;"><option value="">Все проекты</option></select>
       <div style="display:flex; gap:8px;">
         <button class="ghost" id="projectsBtn">Проекты</button>
-        <button class="ghost" id="reportBtn">Отчёт за месяц</button>
+        <button class="ghost" id="reportBtn">Отчёты</button>
         <button class="ghost" id="refresh">Обновить</button>
       </div>
     </div>
@@ -182,18 +193,51 @@
       <button class="primary" id="addProjectBtn" style="margin-top:8px;">Добавить проект</button>
     </div>
 
-    <!-- Панель отчёта -->
+    <!-- Панель отчётов -->
     <div id="reportPanel" class="card hidden">
       <div style="display:flex; justify-content:space-between; align-items:center;">
-        <b id="reportTitle">Отчёт</b>
+        <b>Отчёт за период</b>
         <button class="ghost" id="reportClose">Закрыть</button>
       </div>
-      <pre id="reportBody" style="white-space:pre-wrap; background:#f5f6f8; padding:12px; border-radius:8px; overflow-x:auto; margin-top:10px;"></pre>
-      <div class="entry-actions">
-        <button class="ghost" id="reportShare">Поделиться ссылкой</button>
-        <button class="ghost" id="reportDownload">Скачать .md</button>
+      <div class="muted" style="font-size:13px; margin-top:4px;">
+        Черновик собирается из ваших записей, ИИ причёсывает его в связный текст.
+        Перед отправкой работодателю отчёт можно поправить руками.
       </div>
-      <div id="reportLink" class="muted" style="font-size:13px; margin-top:6px;"></div>
+
+      <div class="row" style="margin-top:10px;">
+        <div><label>С какого дня</label><input id="reportFrom" type="date"></div>
+        <div><label>По какой день</label><input id="reportTo" type="date"></div>
+      </div>
+      <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;">
+        <button class="ghost period-btn" data-period="week">Эта неделя</button>
+        <button class="ghost period-btn" data-period="month">Этот месяц</button>
+        <button class="ghost period-btn" data-period="prev">Прошлый месяц</button>
+      </div>
+      <button class="primary" id="reportBuild" style="margin-top:10px;">Собрать отчёт</button>
+      <span class="muted" id="reportStatus" style="font-size:13px; margin-left:8px;"></span>
+
+      <!-- Результат -->
+      <div id="reportResult" class="hidden" style="margin-top:14px; border-top:1px solid var(--line); padding-top:12px;">
+        <b id="reportTitle"></b>
+        <div id="reportPreview" class="report-preview"></div>
+        <textarea id="reportEditor" class="hidden" style="min-height:280px; margin-top:10px;"></textarea>
+        <div class="entry-actions" style="flex-wrap:wrap;">
+          <button class="ghost" id="reportEdit">Править текст</button>
+          <button class="primary hidden" id="reportSave">Сохранить правки</button>
+          <button class="ghost hidden" id="reportCancelEdit">Отмена</button>
+          <button class="ghost" id="reportShare">Поделиться ссылкой</button>
+          <button class="ghost hidden" id="reportRevoke">Отозвать ссылку</button>
+          <button class="ghost" id="reportDownload">Скачать .md</button>
+          <button class="ghost" id="reportPrint">Печать / PDF</button>
+        </div>
+        <div id="reportLink" class="muted" style="font-size:13px; margin-top:6px;"></div>
+      </div>
+
+      <!-- Ранее собранные отчёты -->
+      <div style="margin-top:16px;">
+        <div class="muted" style="font-size:13px; font-weight:600;">Собранные отчёты</div>
+        <div id="reportHistory"></div>
+      </div>
     </div>
   </section>
 
@@ -696,47 +740,193 @@
     }
   };
 
-  // --- Отчёт за текущий месяц ---
+  // --- Отчёты ---
   let currentReport = null;
 
-  $('reportBtn').onclick = async () => {
+  // Открыть панель: подставить текущий месяц и подтянуть историю отчётов.
+  $('reportBtn').onclick = () => {
+    $('reportPanel').classList.remove('hidden');
+    if (!$('reportFrom').value) setPeriod('month');
+    loadReportHistory();
+    $('reportPanel').scrollIntoView({ behavior: 'smooth' });
+  };
+  $('reportClose').onclick = () => $('reportPanel').classList.add('hidden');
+
+  /** Быстрый выбор периода: эта неделя / этот месяц / прошлый месяц. */
+  function setPeriod(kind) {
     const now = new Date();
-    const from = ymd(new Date(now.getFullYear(), now.getMonth(), 1));
-    const to = ymd(now);
-    $('reportBtn').disabled = true;
+    let from, to;
+    if (kind === 'week') {
+      from = new Date(now);
+      from.setDate(from.getDate() - ((from.getDay() + 6) % 7)); // понедельник этой недели
+      to = now;
+    } else if (kind === 'prev') {
+      from = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      to = new Date(now.getFullYear(), now.getMonth(), 0);       // последний день прошлого месяца
+    } else {
+      from = new Date(now.getFullYear(), now.getMonth(), 1);
+      to = now;
+    }
+    $('reportFrom').value = ymd(from);
+    $('reportTo').value = ymd(to);
+  }
+
+  document.querySelectorAll('.period-btn').forEach(b => {
+    b.onclick = () => setPeriod(b.dataset.period);
+  });
+
+  function showReport(report) {
+    currentReport = report;
+    $('reportResult').classList.remove('hidden');
+    $('reportTitle').textContent = report.title;
+    $('reportPreview').innerHTML = report.contentHtml;
+    $('reportPreview').classList.remove('hidden');
+    $('reportEditor').classList.add('hidden');
+    $('reportSave').classList.add('hidden');
+    $('reportCancelEdit').classList.add('hidden');
+    $('reportEdit').classList.remove('hidden');
+    renderShareState();
+  }
+
+  function renderShareState() {
+    const token = currentReport && currentReport.shareToken;
+    $('reportRevoke').classList.toggle('hidden', !token);
+    $('reportShare').classList.toggle('hidden', !!token);
+    $('reportLink').innerHTML = token
+      ? 'Ссылка для работодателя: <a class="link" href="/r/' + token + '" target="_blank">'
+        + location.origin + '/r/' + token + '</a>'
+      : '';
+  }
+
+  $('reportBuild').onclick = async () => {
+    const from = $('reportFrom').value, to = $('reportTo').value;
+    if (!from || !to) { $('reportStatus').textContent = 'Выберите период'; return; }
+    $('reportBuild').disabled = true;
+    $('reportStatus').textContent = serverConfig.aiEnabled ? 'Собираем, ИИ причёсывает текст…' : 'Собираем…';
     try {
-      const res = await api('/api/reports', { method: 'POST', body: { periodStart: from, periodEnd: to } });
-      if (!res.ok) { alert('Не удалось собрать отчёт (' + res.status + ')'); return; }
-      currentReport = await res.json();
-      $('reportTitle').textContent = currentReport.title;
-      $('reportBody').textContent = currentReport.contentMd;
-      $('reportLink').textContent = '';
-      $('reportPanel').classList.remove('hidden');
-      $('reportPanel').scrollIntoView({ behavior: 'smooth' });
+      const res = await api('/api/reports', {
+        method: 'POST',
+        body: { periodStart: from, periodEnd: to, projectId: $('feedFilter').value || null },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { $('reportStatus').textContent = data.error || 'Не вышло (' + res.status + ')'; return; }
+      $('reportStatus').textContent = '';
+      showReport(data);
+      loadReportHistory();
     } finally {
-      $('reportBtn').disabled = false;
+      $('reportBuild').disabled = false;
     }
   };
 
-  $('reportClose').onclick = () => $('reportPanel').classList.add('hidden');
+  // --- Правка текста отчёта перед отправкой ---
+  $('reportEdit').onclick = () => {
+    $('reportEditor').value = currentReport.contentMd;
+    $('reportEditor').classList.remove('hidden');
+    $('reportPreview').classList.add('hidden');
+    $('reportEdit').classList.add('hidden');
+    $('reportSave').classList.remove('hidden');
+    $('reportCancelEdit').classList.remove('hidden');
+    $('reportEditor').focus();
+  };
 
+  $('reportCancelEdit').onclick = () => showReport(currentReport);
+
+  $('reportSave').onclick = async () => {
+    $('reportSave').disabled = true;
+    try {
+      const res = await api('/api/reports/' + currentReport.id, {
+        method: 'PUT',
+        body: { contentMd: $('reportEditor').value },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { alert(data.error || 'Не удалось сохранить'); return; }
+      showReport(data);
+      loadReportHistory();
+    } finally {
+      $('reportSave').disabled = false;
+    }
+  };
+
+  // --- Публичная ссылка ---
   $('reportShare').onclick = async () => {
     if (!currentReport) return;
     const res = await api('/api/reports/' + currentReport.id + '/share', { method: 'POST' });
     if (!res.ok) return;
-    const data = await res.json();
-    const url = location.origin + data.url;
-    $('reportLink').innerHTML = 'Ссылка для работодателя: <a class="link" href="' + url + '" target="_blank">' + url + '</a>';
+    currentReport.shareToken = (await res.json()).shareToken;
+    renderShareState();
+    loadReportHistory();
   };
 
+  $('reportRevoke').onclick = async () => {
+    if (!currentReport || !confirm('Отозвать ссылку? Отчёт по ней перестанет открываться.')) return;
+    const res = await api('/api/reports/' + currentReport.id + '/share', { method: 'DELETE' });
+    if (!res.ok) return;
+    currentReport.shareToken = null;
+    renderShareState();
+    loadReportHistory();
+  };
+
+  // --- Выгрузка ---
   $('reportDownload').onclick = () => {
     if (!currentReport) return;
     const blob = new Blob([currentReport.contentMd], { type: 'text/markdown' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = 'devlog-report.md';
+    a.download = 'devlog-' + currentReport.periodStart + '_' + currentReport.periodEnd + '.md';
     a.click();
   };
+
+  // PDF делаем печатью браузера: кириллица гарантированно на месте, и не нужно
+  // тащить на сервер шрифт ради генерации PDF.
+  $('reportPrint').onclick = () => {
+    if (!currentReport) return;
+    const w = window.open('', '_blank');
+    if (!w) { alert('Браузер заблокировал новое окно — разрешите всплывающие окна'); return; }
+    w.document.write('<!doctype html><html lang="ru"><head><meta charset="utf-8"><title>'
+      + esc(currentReport.title) + '</title><style>'
+      + 'body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;max-width:760px;'
+      + 'margin:0 auto;padding:32px 18px;color:#1c2330;line-height:1.6}'
+      + 'h1{font-size:24px}h2{font-size:18px;margin-top:24px}h3{font-size:15px}ul{padding-left:20px}'
+      + '</style></head><body>' + currentReport.contentHtml
+      + '<scr' + 'ipt>window.onload=function(){window.print()}</scr' + 'ipt></body></html>');
+    w.document.close();
+  };
+
+  // --- История собранных отчётов ---
+  async function loadReportHistory() {
+    const res = await api('/api/reports');
+    if (!res.ok) return;
+    const reports = await res.json();
+    const box = $('reportHistory');
+    if (!reports.length) {
+      box.innerHTML = '<div class="muted" style="font-size:13px;">Пока ни одного. Соберите первый.</div>';
+      return;
+    }
+    box.innerHTML = reports.map(r => `<div class="rep-row" data-id="${r.id}">
+      <span>${esc(r.title)}${r.shareToken ? ' <span class="tag">со ссылкой</span>' : ''}</span>
+      <span style="display:flex; gap:8px;">
+        <button class="ghost rep-open">Открыть</button>
+        <button class="ghost rep-del">Удалить</button>
+      </span>
+    </div>`).join('');
+    const byId = Object.fromEntries(reports.map(r => [r.id, r]));
+    box.querySelectorAll('.rep-row').forEach(row => {
+      const id = row.dataset.id;
+      row.querySelector('.rep-open').onclick = () => {
+        showReport(byId[id]);
+        $('reportResult').scrollIntoView({ behavior: 'smooth' });
+      };
+      row.querySelector('.rep-del').onclick = async () => {
+        if (!confirm('Удалить отчёт? Записи останутся на месте.')) return;
+        await api('/api/reports/' + id, { method: 'DELETE' });
+        if (currentReport && currentReport.id === id) {
+          currentReport = null;
+          $('reportResult').classList.add('hidden');
+        }
+        loadReportHistory();
+      };
+    });
+  }
 
   // --- Старт: если есть токен — проверим его через /api/me ---
   (async function init() {
