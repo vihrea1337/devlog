@@ -148,6 +148,15 @@ fun Route.reportRoutes() {
 
 private fun ApplicationCall.reportId(): UUID? = parameters["id"]?.let(::parseUuidOrNull)
 
+/**
+ * «2026-08-12T15:18:52.211558Z» → «12.08.2026». Страницу отчёта читает работодатель,
+ * машинная метка времени в подвале ему ни о чём не говорит.
+ */
+private fun humanDate(iso: String): String {
+    val date = iso.take(10).split("-")
+    return if (date.size == 3) "${date[2]}.${date[1]}.${date[0]}" else Markdown.escapeHtml(iso)
+}
+
 /** Публичная HTML-страница отчёта (Markdown → HTML). */
 private fun renderReportPage(report: ReportDto): String = """
 <!doctype html>
@@ -160,8 +169,11 @@ private fun renderReportPage(report: ReportDto): String = """
   body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;max-width:760px;margin:0 auto;padding:32px 18px;color:#1c2330;line-height:1.6;background:#fff}
   h1{font-size:24px} h2{font-size:18px;margin-top:24px;border-top:1px solid #eee;padding-top:14px}
   h3{font-size:15px} ul{padding-left:20px} .foot{margin-top:40px;color:#8a92a1;font-size:12px}
+  table{border-collapse:collapse;width:100%;margin:12px 0;font-size:14px;display:block;overflow-x:auto}
+  th,td{border:1px solid #e3e6ec;padding:6px 10px;text-align:left}
+  th{background:#f5f6f8;font-weight:600}
 </style></head><body>
 ${Markdown.toHtml(report.contentMd)}
-<div class="foot">Сгенерировано DevLog · ${Markdown.escapeHtml(report.createdAt)}</div>
+<div class="foot">Сгенерировано DevLog · ${humanDate(report.createdAt)}</div>
 </body></html>
 """.trimIndent()
