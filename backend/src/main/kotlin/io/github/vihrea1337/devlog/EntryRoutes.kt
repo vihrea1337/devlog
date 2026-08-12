@@ -75,7 +75,9 @@ fun Route.entryRoutes() = authenticate("auth-jwt") {
         val projectId = projectRaw?.takeIf { it.isNotBlank() }?.let {
             parseUuidOrNull(it) ?: return@get call.badRequest("Некорректный id проекта")
         }
-        call.respond(EntryRepository.list(call.userId(), from, to, projectId))
+        val search = call.request.queryParameters["q"]?.take(200)
+        val tag = call.request.queryParameters["tag"]?.take(60)
+        call.respond(EntryRepository.list(call.userId(), from, to, projectId, search, tag))
     }
 
     post("/api/entries") {

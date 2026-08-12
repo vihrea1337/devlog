@@ -7,6 +7,7 @@ import org.jetbrains.exposed.sql.and
 import org.jetbrains.exposed.sql.andWhere
 import org.jetbrains.exposed.sql.deleteWhere
 import org.jetbrains.exposed.sql.insert
+import org.jetbrains.exposed.sql.lowerCase
 import org.jetbrains.exposed.sql.or
 import org.jetbrains.exposed.sql.selectAll
 import org.jetbrains.exposed.sql.update
@@ -22,14 +23,47 @@ import java.util.UUID
  */
 object EntryRepository {
 
-    /** Список записей пользователя с необязательными фильтрами: период (from/to) и проект. */
-    fun list(userId: UUID, from: LocalDate?, to: LocalDate?, projectId: UUID?): List<EntryDto> {
+    /**
+     * Список записей пользователя с необязательными фильтрами: период (from/to), проект,
+     * поиск по тексту [query] и тег [tag].
+     *
+     * Поиск смотрит и в сырой текст, и в то, что извлёк ИИ (суть и теги): человек ищет
+     * «виджет», а слово может быть только в summary — иначе поиск выглядел бы сломанным.
+     */
+    fun list(
+        userId: UUID,
+        from: LocalDate?,
+        to: LocalDate?,
+        projectId: UUID?,
+        query: String? = null,
+        tag: String? = null,
+    ): List<EntryDto> {
+        val needle = query?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }
+        val tagNeedle = tag?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }
+
         val base = transaction {
-            val query = Entries.selectAll().where { Entries.userId eq userId }
-            if (from != null) query.andWhere { Entries.occurredOn greaterEq from }
-            if (to != null) query.andWhere { Entries.occurredOn lessEq to }
-            if (projectId != null) query.andWhere { Entries.projectId eq projectId }
-            query.orderBy(Entries.occurredOn to SortOrder.DESC, Entries.createdAt to SortOrder.DESC)
+            // Записи, у которых совпало в структуре от ИИ (суть или теги).
+            val structuredHits: Set<UUID>? = when {
+                needle != null -> EntryStructuredRepository.findEntriesMatching(needle)
+                tagNeedle != null -> EntryStructuredRepository.findEntriesWithTag(tagNeedle)
+                else -> null
+            }
+
+            val q = Entries.selectAll().where { Entries.userId eq userId }
+            if (from != null) q.andWhere { Entries.occurredOn greaterEq from }
+            if (to != null) q.andWhere { Entries.occurredOn lessEq to }
+            if (projectId != null) q.andWhere { Entries.projectId eq projectId }
+            if (needle != null) {
+                val pattern = "%" + needle.escapeLike() + "%"
+                q.andWhere {
+                    (Entries.rawText.lowerCase() like pattern) or
+                        (Entries.id inList (structuredHits ?: emptySet()))
+                }
+            }
+            // Тег живёт только в структуре от ИИ, поэтому фильтр — по найденным там id.
+            if (tagNeedle != null) q.andWhere { Entries.id inList (structuredHits ?: emptySet()) }
+
+            q.orderBy(Entries.occurredOn to SortOrder.DESC, Entries.createdAt to SortOrder.DESC)
                 .map { it.toEntryDto() }
         }
         if (base.isEmpty()) return base
@@ -143,6 +177,13 @@ object EntryRepository {
             }
             null
         }
+
+    /**
+     * Экранировать спецсимволы LIKE: `%` — «любой текст», `_` — «любой символ».
+     * Без этого поиск по «100%» вернул бы вообще всё.
+     */
+    private fun String.escapeLike(): String =
+        replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
     private data class Candidate(
         val id: UUID,

@@ -47,6 +47,7 @@
   .struct h4 { margin: 8px 0 2px; font-size: 13px; }
   .struct ul { margin: 2px 0 0; padding-left: 18px; }
   .tags { margin-top: 8px; }
+  .tag-btn { cursor: pointer; }
   .tag { display: inline-block; background: #eef2fe; color: var(--accent); font-size: 12px; padding: 2px 8px; border-radius: 6px; margin: 2px 4px 0 0; }
   .entry-actions { margin-top: 10px; display: flex; gap: 8px; }
   .err { color: var(--err); font-size: 13px; min-height: 18px; }
@@ -143,6 +144,8 @@
       </div>
     </div>
 
+    <input id="searchBox" placeholder="Поиск по записям, сути и тегам" style="margin-bottom:10px;">
+
     <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
       <select id="feedFilter" style="max-width:220px;"><option value="">Все проекты</option></select>
       <div style="display:flex; gap:8px;">
@@ -151,8 +154,9 @@
         <button class="ghost" id="refresh">Обновить</button>
       </div>
     </div>
-    <div id="dayFilterRow" class="hidden" style="margin-top:10px;">
-      <span class="day-chip" id="dayFilterChip"></span>
+    <div id="filterRow" style="margin-top:10px; display:flex; gap:8px; flex-wrap:wrap;">
+      <span class="day-chip hidden" id="dayFilterChip"></span>
+      <span class="day-chip hidden" id="tagFilterChip"></span>
     </div>
     <div id="feed"></div>
 
@@ -360,7 +364,7 @@
     const list = (title, arr) => (arr && arr.length)
       ? `<h4>${title}</h4><ul>${arr.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : '';
     const tags = (s.tags && s.tags.length)
-      ? `<div class="tags">${s.tags.map(t => `<span class="tag">${esc(t)}</span>`).join('')}</div>` : '';
+      ? `<div class="tags">${s.tags.map(t => `<span class="tag tag-btn" data-tag="${esc(t)}">${esc(t)}</span>`).join('')}</div>` : '';
     return `<div class="struct">
       ${s.summary ? `<div><b>${esc(s.summary)}</b></div>` : ''}
       ${list('Шаги', s.steps)}
@@ -435,6 +439,8 @@
     const params = new URLSearchParams();
     if ($('feedFilter').value) params.set('projectId', $('feedFilter').value);
     if (dayFilter) { params.set('from', dayFilter); params.set('to', dayFilter); }
+    if (searchQuery) params.set('q', searchQuery);
+    if (tagFilter) params.set('tag', tagFilter);
     const query = params.toString();
     const res = await api('/api/entries' + (query ? '?' + query : ''));
     if (res.status === 401) { clearToken(); location.reload(); return; }
@@ -442,7 +448,8 @@
     const feed = $('feed');
     if (!entries.length) {
       feed.innerHTML = '<div class="muted" style="margin-top:14px;">'
-        + (dayFilter ? 'За этот день записей нет.' : 'Пока пусто. Добавьте первую запись выше.')
+        + (dayFilter || tagFilter || searchQuery ? 'Ничего не нашлось — попробуйте снять фильтры.'
+                                                 : 'Пока пусто. Добавьте первую запись выше.')
         + '</div>';
       return;
     }
@@ -457,6 +464,9 @@
     feed.querySelectorAll('.entry').forEach(card => {
       const id = card.dataset.id;
       card.querySelector('.act-edit').onclick = () => startEdit(card, byId[id]);
+      card.querySelectorAll('.tag-btn').forEach(t => {
+        t.onclick = () => setTagFilter(t.dataset.tag === tagFilter ? null : t.dataset.tag);
+      });
       card.querySelector('.act-delete').onclick = async () => {
         if (!confirm('Удалить запись?')) return;
         await api('/api/entries/' + id, { method: 'DELETE' });
@@ -560,8 +570,11 @@
     if (res.ok) renderHeatmap(await res.json());
   }
 
-  // --- Фильтр ленты по конкретному дню ---
+  // --- Фильтры ленты: конкретный день, тег, поиск по тексту ---
   let dayFilter = null;
+  let tagFilter = null;
+  let searchQuery = '';
+  let searchTimer = null;
 
   function markSelectedDay() {
     $('heatmap').querySelectorAll('.hm-cell').forEach(c => {
@@ -569,15 +582,38 @@
     });
   }
 
+  function renderFilterChips() {
+    $('dayFilterChip').classList.toggle('hidden', !dayFilter);
+    if (dayFilter) $('dayFilterChip').textContent = dayTitle(dayFilter) + ' ✕';
+    $('tagFilterChip').classList.toggle('hidden', !tagFilter);
+    if (tagFilter) $('tagFilterChip').textContent = '#' + tagFilter + ' ✕';
+  }
+
   function setDayFilter(day) {
     dayFilter = day;
-    $('dayFilterRow').classList.toggle('hidden', !day);
-    if (day) $('dayFilterChip').textContent = 'только ' + day + ' ✕';
+    renderFilterChips();
     markSelectedDay();
     loadEntries();
   }
 
+  function setTagFilter(tag) {
+    tagFilter = tag;
+    renderFilterChips();
+    loadEntries();
+  }
+
   $('dayFilterChip').onclick = () => setDayFilter(null);
+  $('tagFilterChip').onclick = () => setTagFilter(null);
+
+  // Поиск с задержкой: запрос уходит, когда человек перестал печатать,
+  // а не на каждую букву.
+  $('searchBox').addEventListener('input', () => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => {
+      searchQuery = $('searchBox').value.trim();
+      loadEntries();
+    }, 300);
+  });
 
   // Настройки сервера (включён ли ИИ) — от них зависит, что писать в статусах записей.
   async function loadConfig() {

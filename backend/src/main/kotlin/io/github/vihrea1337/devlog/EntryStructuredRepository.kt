@@ -7,6 +7,8 @@ import org.jetbrains.exposed.sql.ResultRow
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
 import org.jetbrains.exposed.sql.deleteWhere
 import org.jetbrains.exposed.sql.insert
+import org.jetbrains.exposed.sql.lowerCase
+import org.jetbrains.exposed.sql.or
 import org.jetbrains.exposed.sql.selectAll
 import org.jetbrains.exposed.sql.transactions.transaction
 import java.time.Instant
@@ -48,6 +50,36 @@ object EntryStructuredRepository {
         EntryStructured.selectAll().where { EntryStructured.entryId inList ids }
             .associate { it[EntryStructured.entryId] to it.toDto() }
     }
+
+    /**
+     * id записей, у которых искомое слово встречается в сути или тегах (для поиска по ленте).
+     * Ограничение по пользователю накладывает вызывающий код: здесь мы отдаём только id,
+     * а сама выборка записей всё равно фильтруется по user_id.
+     */
+    fun findEntriesMatching(needleLower: String): Set<UUID> = transaction {
+        val pattern = "%" + needleLower.escapeLike() + "%"
+        EntryStructured
+            .selectAll()
+            .where { (EntryStructured.summary.lowerCase() like pattern) or (EntryStructured.tags.lowerCase() like pattern) }
+            .map { it[EntryStructured.entryId] }
+            .toSet()
+    }
+
+    /**
+     * id записей с конкретным тегом. Теги лежат JSON-массивом в text-колонке (`["kotlin","ci"]`),
+     * поэтому ищем подстроку в кавычках — так «kotlin» не совпадёт с «kotlin-dsl».
+     */
+    fun findEntriesWithTag(tagLower: String): Set<UUID> = transaction {
+        val pattern = "%\"" + tagLower.escapeLike() + "\"%"
+        EntryStructured
+            .selectAll()
+            .where { EntryStructured.tags.lowerCase() like pattern }
+            .map { it[EntryStructured.entryId] }
+            .toSet()
+    }
+
+    private fun String.escapeLike(): String =
+        replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
     private fun decodeList(raw: String): List<String> =
         runCatching { json.decodeFromString<List<String>>(raw) }.getOrElse { emptyList() }
