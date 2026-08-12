@@ -1,5 +1,12 @@
 package io.github.vihrea1337.devlog.android.data
 
+import io.github.vihrea1337.devlog.AuthResponse
+import io.github.vihrea1337.devlog.EntryDto
+import io.github.vihrea1337.devlog.LoginRequest
+import io.github.vihrea1337.devlog.NewEntry
+import io.github.vihrea1337.devlog.ProjectDto
+import io.github.vihrea1337.devlog.RegisterRequest
+import io.github.vihrea1337.devlog.UserDto
 import io.github.vihrea1337.devlog.android.TokenStore
 import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType

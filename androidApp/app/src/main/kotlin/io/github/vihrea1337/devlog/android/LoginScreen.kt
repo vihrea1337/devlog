@@ -22,8 +22,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import io.github.vihrea1337.devlog.android.data.ApiClient
-import io.github.vihrea1337.devlog.android.data.LoginRequest
-import io.github.vihrea1337.devlog.android.data.RegisterRequest
+import io.github.vihrea1337.devlog.LoginRequest
+import io.github.vihrea1337.devlog.RegisterRequest
 import kotlinx.coroutines.launch
 
 /**

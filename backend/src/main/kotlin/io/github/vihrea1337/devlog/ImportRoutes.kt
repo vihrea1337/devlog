@@ -9,22 +9,6 @@ import io.ktor.server.routing.post
 import kotlinx.serialization.Serializable
 import java.time.LocalDate
 
-/** Тело запроса на импорт: период и (необязательно) проект, к которому привязать записи. */
-@Serializable
-data class GithubImportRequest(
-    val periodStart: String,
-    val periodEnd: String,
-    val projectId: String? = null,
-)
-
-@Serializable
-data class ImportResultDto(
-    val days: Int,
-    val commits: Int,
-    val created: Int,
-    val skipped: Int,
-)
-
 /** Максимальный период за один импорт: у публичной активности GitHub всё равно ~90 дней. */
 private const val MAX_IMPORT_DAYS = 120L
 

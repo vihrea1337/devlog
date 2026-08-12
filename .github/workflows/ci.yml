@@ -24,7 +24,7 @@ jobs:
         working-directory: backend
         run: |
           chmod +x ./gradlew
-          ./gradlew test distTar --no-daemon
+          ./gradlew :shared:test test distTar --no-daemon
 
   android-build:
     name: Android — сборка debug

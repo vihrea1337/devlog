@@ -31,8 +31,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import io.github.vihrea1337.devlog.android.data.EntryDto
-import io.github.vihrea1337.devlog.android.data.ProjectDto
+import io.github.vihrea1337.devlog.EntryDto
+import io.github.vihrea1337.devlog.ProjectDto
 import java.time.LocalDate
 
 /**

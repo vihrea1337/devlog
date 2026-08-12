@@ -19,21 +19,6 @@ import java.util.UUID
  * Считаем на сервере, а не в браузере: клиенту не нужно тянуть все записи за год,
  * чтобы посчитать количество по дням, а мобильному приложению это тем более пригодится.
  */
-@Serializable
-data class ActivityStatsDto(
-    /** Дата (ГГГГ-ММ-ДД) → сколько записей в этот день. Дни без записей не передаём. */
-    val days: Map<String, Int>,
-    /** Сколько дней подряд ведётся дневник прямо сейчас. */
-    val currentStreak: Int,
-    /** Самая длинная серия за период. */
-    val longestStreak: Int,
-    /** Всего записей и всего дней с записями за период. */
-    val totalEntries: Int,
-    val activeDays: Int,
-    val from: String,
-    val to: String,
-)
-
 fun Route.statsRoutes() = authenticate("auth-jwt") {
     get("/api/stats/activity") {
         val to = call.request.queryParameters["to"]?.let {

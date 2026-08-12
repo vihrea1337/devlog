@@ -3,9 +3,9 @@ package io.github.vihrea1337.devlog.android
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import io.github.vihrea1337.devlog.android.data.ApiClient
-import io.github.vihrea1337.devlog.android.data.EntryDto
-import io.github.vihrea1337.devlog.android.data.NewEntry
-import io.github.vihrea1337.devlog.android.data.ProjectDto
+import io.github.vihrea1337.devlog.EntryDto
+import io.github.vihrea1337.devlog.NewEntry
+import io.github.vihrea1337.devlog.ProjectDto
 import java.util.UUID
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow

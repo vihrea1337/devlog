@@ -14,43 +14,6 @@ import io.ktor.server.routing.put
 import kotlinx.serialization.Serializable
 import java.util.UUID
 
-// --- Форматы запросов/ответов (DTO — Data Transfer Object, то, что летает в JSON) ---
-
-@Serializable
-data class RegisterRequest(val email: String, val password: String, val displayName: String = "")
-
-@Serializable
-data class LoginRequest(val email: String, val password: String)
-
-@Serializable
-data class UserDto(
-    val id: String,
-    val email: String,
-    val displayName: String,
-    /** Логин на GitHub, если привязан: с ним работает импорт коммитов. */
-    val githubLogin: String? = null,
-)
-
-/** Тело PUT /api/me: пока меняем только привязку к GitHub. Пустая строка — отвязать. */
-@Serializable
-data class UpdateProfile(val githubLogin: String? = null)
-
-/** Ответ на регистрацию/вход: токен + кто вошёл. */
-@Serializable
-data class AuthResponse(val token: String, val user: UserDto)
-
-/** Единый формат ошибки. */
-@Serializable
-data class ErrorResponse(val error: String)
-
-/**
- * Настройки сервера, важные клиенту. Главное — включён ли ИИ: без ключа записи честно
- * висят в очереди, и интерфейс должен писать «ИИ выключен», а не притворяться, что вот-вот
- * обработает.
- */
-@Serializable
-data class ServerConfigDto(val aiEnabled: Boolean, val aiDailyLimit: Int)
-
 /** Правила GitHub: латиница, цифры и дефис, не длиннее 39 символов. */
 private val GITHUB_LOGIN = Regex("^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}$")
 

@@ -45,13 +45,23 @@ object ProjectRepository {
         findInTx(userId, newId)!!
     }
 
-    /** Частичная правка: меняем только переданные (не-null) поля. */
+    /**
+     * Частичная правка: меняем только переданные (не-null) поля.
+     *
+     * Поля сначала кладём в локальные переменные: DTO теперь живёт в общем модуле,
+     * а через границу модуля Kotlin не делает умное приведение типов (`body.name != null`
+     * не превращает `String?` в `String`).
+     */
     fun update(userId: UUID, id: UUID, body: UpdateProject): ProjectDto? = transaction {
+        val newName = body.name
+        val newColor = body.color
+        val newAiEnabled = body.aiEnabled
+        val newArchived = body.archived
         val changed = Projects.update({ (Projects.id eq id) and (Projects.userId eq userId) }) {
-            if (body.name != null) it[name] = body.name.trim()
-            if (body.color != null) it[color] = body.color.trim().ifBlank { null }
-            if (body.aiEnabled != null) it[aiEnabled] = body.aiEnabled
-            if (body.archived != null) it[archived] = body.archived
+            if (newName != null) it[name] = newName.trim()
+            if (newColor != null) it[color] = newColor.trim().ifBlank { null }
+            if (newAiEnabled != null) it[aiEnabled] = newAiEnabled
+            if (newArchived != null) it[archived] = newArchived
         }
         if (changed == 0) null else findInTx(userId, id)
     }

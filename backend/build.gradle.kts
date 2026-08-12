@@ -29,6 +29,10 @@ repositories {
 }
 
 dependencies {
+    // Общий модуль: модели обмена с клиентами (DTO). Одно определение на всех —
+    // раньше те же классы жили отдельно на бэкенде и в Android и могли разъехаться.
+    implementation("io.github.vihrea1337.devlog:shared:1.0")
+
     // Ядро Ktor + сам HTTP-сервер (движок Netty).
     implementation("io.ktor:ktor-server-core")
     implementation("io.ktor:ktor-server-netty")

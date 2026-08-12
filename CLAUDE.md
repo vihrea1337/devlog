@@ -16,6 +16,14 @@
 - Коммиты **без** трейлера `Co-Authored-By`.
 - Пользователь — junior, объяснять как новичку, расшифровывать термины.
 
+## Структура репозитория
+- `backend/` — сервер Ktor (самостоятельный Gradle-проект).
+- `androidApp/` — Android-приложение (самостоятельный Gradle-проект).
+- `shared/` — **общий модуль с DTO**: один контракт API на бэкенд и Android,
+  подключается обоим через `includeBuild("../shared")`. Меняешь поле — меняй здесь,
+  оба проекта увидят это на компиляции. Тесты: `./gradlew :shared:test` из `backend/`.
+- `deploy/server/` — файлы деплоя и runbook, `docs/` — проектные документы.
+
 ## Стек (зафиксирован)
 - **Бэкенд:** Kotlin + Ktor + PostgreSQL + Exposed + HikariCP.
 - **Схема БД:** миграции Flyway (`backend/src/main/resources/db/migration/V…__.sql`).

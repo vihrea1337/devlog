@@ -13,31 +13,6 @@ import io.ktor.server.routing.put
 import kotlinx.serialization.Serializable
 import java.util.UUID
 
-// --- DTO проектов ---
-
-/** Тело POST /api/projects. Цвет и выключатель ИИ — необязательны. */
-@Serializable
-data class NewProject(val name: String, val color: String? = null, val aiEnabled: Boolean = true)
-
-/** Тело PUT /api/projects/{id}: меняем только переданные поля (остальные — null = не трогать). */
-@Serializable
-data class UpdateProject(
-    val name: String? = null,
-    val color: String? = null,
-    val aiEnabled: Boolean? = null,
-    val archived: Boolean? = null,
-)
-
-@Serializable
-data class ProjectDto(
-    val id: String,
-    val name: String,
-    val color: String?,
-    val aiEnabled: Boolean,
-    val archived: Boolean,
-    val createdAt: String,
-)
-
 /** Ручки проектов — все под токеном и в контексте своего пользователя. */
 fun Route.projectRoutes() = authenticate("auth-jwt") {
 

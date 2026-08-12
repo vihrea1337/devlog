@@ -61,20 +61,25 @@ fun validateNewEntry(userId: UUID, body: NewEntry): Validated<ValidEntryInput> {
     val date = parseDateOrNull(body.occurredOn)
         ?: return Validated.Invalid("Некорректная дата работы, нужен формат ГГГГ-ММ-ДД")
 
+    // Значения берём в локальные переменные: DTO лежит в общем модуле, а через границу
+    // модуля Kotlin не делает умное приведение типов (проверка на null «не запоминается»).
+    val rawProjectId = body.projectId
     val projectId = when {
-        body.projectId.isNullOrBlank() -> null
-        else -> parseUuidOrNull(body.projectId) ?: return Validated.Invalid("Некорректный id проекта")
+        rawProjectId.isNullOrBlank() -> null
+        else -> parseUuidOrNull(rawProjectId) ?: return Validated.Invalid("Некорректный id проекта")
     }
     if (projectId != null && ProjectRepository.getById(userId, projectId) == null) {
         return Validated.Invalid("Проект не найден")
     }
-    if (body.timeSpentMin != null && body.timeSpentMin < 0) {
+    val minutes = body.timeSpentMin
+    if (minutes != null && minutes < 0) {
         return Validated.Invalid("Потраченное время не может быть отрицательным")
     }
 
+    val rawId = body.id
     val clientId = when {
-        body.id.isNullOrBlank() -> null
-        else -> parseUuidOrNull(body.id) ?: return Validated.Invalid("Некорректный id записи")
+        rawId.isNullOrBlank() -> null
+        else -> parseUuidOrNull(rawId) ?: return Validated.Invalid("Некорректный id записи")
     }
     if (clientId != null && EntryRepository.existsOwnedByOther(userId, clientId)) {
         return Validated.Invalid("Запись с таким id уже занята")
@@ -86,7 +91,7 @@ fun validateNewEntry(userId: UUID, body: NewEntry): Validated<ValidEntryInput> {
             rawText = text,
             projectId = projectId,
             sourceType = body.sourceType.trim().ifBlank { "manual" }.take(20),
-            timeSpentMin = body.timeSpentMin,
+            timeSpentMin = minutes,
             id = clientId,
         ),
     )
@@ -104,19 +109,21 @@ fun validateEntryPatch(userId: UUID, body: UpdateEntry): Validated<ValidEntryPat
     val date = body.occurredOn?.let {
         parseDateOrNull(it) ?: return Validated.Invalid("Некорректная дата работы, нужен формат ГГГГ-ММ-ДД")
     }
-    if (body.timeSpentMin != null && body.timeSpentMin < 0) {
+    val minutes = body.timeSpentMin
+    if (minutes != null && minutes < 0) {
         return Validated.Invalid("Потраченное время не может быть отрицательным")
     }
 
     // Пустая строка — способ убрать запись из проекта (null означает «не трогать поле»).
-    val clearProject = body.projectId != null && body.projectId.isBlank()
+    val rawProjectId = body.projectId
+    val clearProject = rawProjectId != null && rawProjectId.isBlank()
     val projectId = when {
-        body.projectId.isNullOrBlank() -> null
-        else -> parseUuidOrNull(body.projectId) ?: return Validated.Invalid("Некорректный id проекта")
+        rawProjectId.isNullOrBlank() -> null
+        else -> parseUuidOrNull(rawProjectId) ?: return Validated.Invalid("Некорректный id проекта")
     }
     if (projectId != null && ProjectRepository.getById(userId, projectId) == null) {
         return Validated.Invalid("Проект не найден")
     }
 
-    return Validated.Ok(ValidEntryPatch(text, date, body.timeSpentMin, projectId, clearProject))
+    return Validated.Ok(ValidEntryPatch(text, date, minutes, projectId, clearProject))
 }

@@ -18,3 +18,7 @@ dependencyResolutionManagement {
 
 rootProject.name = "DevLogAndroid"
 include(":app")
+
+// Общий модуль с моделями обмена (DTO) — тот же, что использует бэкенд.
+// Так приложение и сервер не могут разъехаться по полям незаметно.
+includeBuild("../shared")
