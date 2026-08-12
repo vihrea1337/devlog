@@ -5,10 +5,45 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>DevLog — дневник разработчика</title>
 <style>
+  /* Светлая тема — значения по умолчанию. Все цвета живут в переменных,
+     поэтому тёмная тема ниже переопределяет только их, а не всю разметку. */
   :root {
     --bg: #f5f6f8; --card: #ffffff; --ink: #1c2330; --muted: #6b7382;
     --line: #e3e6ec; --accent: #3b6ef5; --accent-ink: #fff;
     --ok: #1f9d55; --warn: #b7791f; --err: #d64545;
+    --input-bg: #ffffff; --chip-bg: #eef0f4; --accent-bg: #eef2fe;
+    --ok-bg: #e7f6ec; --warn-bg: #fdf3e2; --err-bg: #fbe9e9;
+    --preview-bg: #fbfcfe;
+    --hm0: #e9ecf1; --hm1: #bcd0fb; --hm2: #8fb0f8; --hm3: #5f8bf4; --hm4: #3b6ef5;
+  }
+
+  /* Тёмная тема: либо выбрана кнопкой, либо взята из настроек системы
+     (если пользователь явно не выбрал светлую). */
+  :root[data-theme="dark"],
+  :root:not([data-theme="light"]) {
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --bg: #14171d; --card: #1b1f27; --ink: #e7eaf0; --muted: #9aa3b2;
+      --line: #2b313c; --accent: #6f97ff; --accent-ink: #0f1218;
+      --ok: #4ec27f; --warn: #e0a33c; --err: #f07070;
+      --input-bg: #141821; --chip-bg: #252b36; --accent-bg: #232c46;
+      --ok-bg: #1b3327; --warn-bg: #33290f; --err-bg: #3a1f1f;
+      --preview-bg: #171b22;
+      --hm0: #262c36; --hm1: #24406e; --hm2: #33589b; --hm3: #4b74c9; --hm4: #6f97ff;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #14171d; --card: #1b1f27; --ink: #e7eaf0; --muted: #9aa3b2;
+    --line: #2b313c; --accent: #6f97ff; --accent-ink: #0f1218;
+    --ok: #4ec27f; --warn: #e0a33c; --err: #f07070;
+    --input-bg: #141821; --chip-bg: #252b36; --accent-bg: #232c46;
+    --ok-bg: #1b3327; --warn-bg: #33290f; --err-bg: #3a1f1f;
+    --preview-bg: #171b22;
+    --hm0: #262c36; --hm1: #24406e; --hm2: #33589b; --hm3: #4b74c9; --hm4: #6f97ff;
   }
   * { box-sizing: border-box; }
   body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -21,15 +56,15 @@
   label { display: block; font-size: 13px; color: var(--muted); margin: 8px 0 4px; }
   input, textarea, button, select { font: inherit; }
   input, textarea, select { width: 100%; padding: 9px 11px; border: 1px solid var(--line); border-radius: 8px;
-    background: #fff; color: var(--ink); }
+    background: var(--input-bg); color: var(--ink); }
   textarea { resize: vertical; min-height: 76px; }
   .proj { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600;
-    color: var(--muted); background: #eef0f4; padding: 2px 8px; border-radius: 6px; }
+    color: var(--muted); background: var(--chip-bg); padding: 2px 8px; border-radius: 6px; }
   .proj .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
   .proj-row { display: flex; align-items: center; justify-content: space-between; gap: 10px;
     padding: 8px 0; border-bottom: 1px solid var(--line); }
   .proj-row:last-child { border-bottom: none; }
-  .ai-off { font-size: 11px; color: var(--warn); background: #fdf3e2; padding: 1px 6px; border-radius: 5px; }
+  .ai-off { font-size: 11px; color: var(--warn); background: var(--warn-bg); padding: 1px 6px; border-radius: 5px; }
   button { cursor: pointer; border: none; border-radius: 8px; padding: 9px 14px; font-weight: 600; }
   button.primary { background: var(--accent); color: var(--accent-ink); }
   button.ghost { background: transparent; color: var(--muted); border: 1px solid var(--line); padding: 6px 10px; font-weight: 500; }
@@ -39,19 +74,19 @@
   .day { font-size: 13px; font-weight: 700; color: var(--muted); margin: 18px 2px 8px; text-transform: uppercase; letter-spacing: .03em; }
   .entry .raw { white-space: pre-wrap; }
   .badge { display: inline-block; font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 20px; }
-  .b-queued, .b-processing { background: #fdf3e2; color: var(--warn); }
-  .b-structured { background: #e7f6ec; color: var(--ok); }
-  .b-failed { background: #fbe9e9; color: var(--err); }
-  .b-draft { background: #eef0f4; color: var(--muted); }
+  .b-queued, .b-processing { background: var(--warn-bg); color: var(--warn); }
+  .b-structured { background: var(--ok-bg); color: var(--ok); }
+  .b-failed { background: var(--err-bg); color: var(--err); }
+  .b-draft { background: var(--chip-bg); color: var(--muted); }
   .struct { margin-top: 10px; border-top: 1px dashed var(--line); padding-top: 10px; }
   .struct h4 { margin: 8px 0 2px; font-size: 13px; }
   .struct ul { margin: 2px 0 0; padding-left: 18px; }
   .tags { margin-top: 8px; }
   .tag-btn { cursor: pointer; }
-  .tag { display: inline-block; background: #eef2fe; color: var(--accent); font-size: 12px; padding: 2px 8px; border-radius: 6px; margin: 2px 4px 0 0; }
+  .tag { display: inline-block; background: var(--accent-bg); color: var(--accent); font-size: 12px; padding: 2px 8px; border-radius: 6px; margin: 2px 4px 0 0; }
   .entry-actions { margin-top: 10px; display: flex; gap: 8px; }
   .err { color: var(--err); font-size: 13px; min-height: 18px; }
-  .ai-err { margin-top: 8px; font-size: 12px; color: var(--err); background: #fbe9e9; padding: 6px 9px; border-radius: 6px; }
+  .ai-err { margin-top: 8px; font-size: 12px; color: var(--err); background: var(--err-bg); padding: 6px 9px; border-radius: 6px; }
   .hint-row { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; margin-top: 4px; }
   /* Календарь активности: 7 строк (дни недели), недели идут колонками — как контрибуции на GitHub. */
   .hm-scroll { overflow-x: auto; padding-bottom: 4px; }
@@ -59,19 +94,19 @@
     grid-auto-columns: 10px; gap: 3px; width: max-content; }
   .hm-months { display: grid; grid-auto-flow: column; grid-auto-columns: 10px; gap: 3px;
     width: max-content; font-size: 10px; color: var(--muted); height: 14px; }
-  .hm-cell { width: 10px; height: 10px; border-radius: 2px; background: #e9ecf1; cursor: pointer; }
-  .hm-cell.l1 { background: #bcd0fb; } .hm-cell.l2 { background: #8fb0f8; }
-  .hm-cell.l3 { background: #5f8bf4; } .hm-cell.l4 { background: #3b6ef5; }
+  .hm-cell { width: 10px; height: 10px; border-radius: 2px; background: var(--hm0); cursor: pointer; }
+  .hm-cell.l1 { background: var(--hm1); } .hm-cell.l2 { background: var(--hm2); }
+  .hm-cell.l3 { background: var(--hm3); } .hm-cell.l4 { background: var(--hm4); }
   .hm-cell.hm-out { visibility: hidden; }
   .hm-cell.hm-sel { outline: 2px solid var(--ink); outline-offset: 1px; }
   .streak { font-size: 15px; font-weight: 700; }
   .stats-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px;
     flex-wrap: wrap; margin-bottom: 10px; }
   .day-chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600;
-    background: #eef2fe; color: var(--accent); padding: 3px 9px; border-radius: 6px; cursor: pointer; }
+    background: var(--accent-bg); color: var(--accent); padding: 3px 9px; border-radius: 6px; cursor: pointer; }
   .counter-over { color: var(--err); font-weight: 600; }
   /* Предпросмотр отчёта: показываем готовый документ, а не исходник Markdown. */
-  .report-preview { margin-top: 10px; padding: 14px 16px; background: #fbfcfe; border: 1px solid var(--line);
+  .report-preview { margin-top: 10px; padding: 14px 16px; background: var(--preview-bg); border: 1px solid var(--line);
     border-radius: 8px; max-height: 420px; overflow-y: auto; }
   .report-preview h1 { font-size: 19px; margin: 0 0 8px; }
   .report-preview h2 { font-size: 15px; margin: 16px 0 4px; }
@@ -86,13 +121,23 @@
   a.link { color: var(--accent); cursor: pointer; text-decoration: none; }
   .hidden { display: none; }
 </style>
+<script>
+  // Ставим тему до отрисовки страницы, иначе при загрузке мигнёт светлым фоном.
+  (function () {
+    var t = localStorage.getItem('devlog_theme');
+    if (t === 'dark' || t === 'light') document.documentElement.setAttribute('data-theme', t);
+  })();
+</script>
 </head>
 <body>
 <div class="wrap">
 
   <!-- Экран входа/регистрации -->
   <section id="auth">
-    <header class="top"><h1>DevLog</h1></header>
+    <header class="top">
+      <h1>DevLog</h1>
+      <button class="ghost theme-btn" title="Тема оформления"></button>
+    </header>
     <div class="card">
       <div id="authTitle" style="font-weight:700; margin-bottom:6px;">Вход</div>
       <div id="nameField" class="hidden">
@@ -116,7 +161,11 @@
   <section id="app" class="hidden">
     <header class="top">
       <h1>DevLog</h1>
-      <div><span class="muted" id="who"></span> &nbsp; <button class="ghost" id="logout">Выйти</button></div>
+      <div style="display:flex; align-items:center; gap:8px;">
+        <span class="muted" id="who"></span>
+        <button class="ghost theme-btn" title="Тема оформления"></button>
+        <button class="ghost" id="logout">Выйти</button>
+      </div>
     </header>
 
     <div class="card">
@@ -272,6 +321,34 @@
   const ymd = d => d.getFullYear() + '-' +
     String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
   const parseYmd = s => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); };
+
+  // --- Тема оформления: система → тёмная → светлая → система ---
+  const THEME_KEY = 'devlog_theme';
+  const THEME_LABEL = { system: '🌓 как в системе', dark: '🌙 тёмная', light: '☀️ светлая' };
+
+  function currentTheme() {
+    const t = localStorage.getItem(THEME_KEY);
+    return t === 'dark' || t === 'light' ? t : 'system';
+  }
+
+  function applyTheme(theme) {
+    if (theme === 'system') {
+      document.documentElement.removeAttribute('data-theme');
+      localStorage.removeItem(THEME_KEY);
+    } else {
+      document.documentElement.setAttribute('data-theme', theme);
+      localStorage.setItem(THEME_KEY, theme);
+    }
+    document.querySelectorAll('.theme-btn').forEach(b => { b.textContent = THEME_LABEL[theme]; });
+  }
+
+  document.querySelectorAll('.theme-btn').forEach(b => {
+    b.onclick = () => {
+      const order = ['system', 'dark', 'light'];
+      applyTheme(order[(order.indexOf(currentTheme()) + 1) % order.length]);
+    };
+  });
+  applyTheme(currentTheme());
 
   // --- Переключение login/register ---
   function setMode(m) {
