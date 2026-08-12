@@ -9,10 +9,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -29,6 +32,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.vihrea1337.devlog.android.data.EntryDto
+import io.github.vihrea1337.devlog.android.data.ProjectDto
 import java.time.LocalDate
 
 /**
@@ -95,6 +99,33 @@ fun FeedScreen(onLogout: () -> Unit, vm: FeedViewModel = viewModel()) {
             TextButton(onClick = { vm.refresh() }) { Text("Обновить") }
         }
 
+        // Фильтр по проектам. Выбранный проект заодно подставляется новым записям —
+        // так же, как на вебе.
+        if (state.projects.isNotEmpty()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                FilterChip(
+                    selected = state.selectedProjectId == null,
+                    onClick = { vm.selectProject(null) },
+                    label = { Text("Все") },
+                )
+                state.projects.forEach { project ->
+                    FilterChip(
+                        selected = state.selectedProjectId == project.id,
+                        onClick = {
+                            vm.selectProject(if (state.selectedProjectId == project.id) null else project.id)
+                        },
+                        label = { Text(project.name) },
+                    )
+                }
+            }
+        }
+
         // --- Лента по дням ---
         if (state.entries.isEmpty()) {
             Text(
@@ -118,6 +149,7 @@ fun FeedScreen(onLogout: () -> Unit, vm: FeedViewModel = viewModel()) {
                     }
                     EntryCard(
                         entry = e,
+                        project = state.projectOf(e.projectId),
                         onDelete = { vm.deleteEntry(e.id) },
                         onReprocess = { vm.reprocess(e.id) },
                     )
@@ -129,13 +161,35 @@ fun FeedScreen(onLogout: () -> Unit, vm: FeedViewModel = viewModel()) {
 
 /** Одна карточка записи: текст, статус обработки ИИ и (если готова) структура. */
 @Composable
-private fun EntryCard(entry: EntryDto, onDelete: () -> Unit, onReprocess: () -> Unit) {
+private fun EntryCard(
+    entry: EntryDto,
+    project: ProjectDto?,
+    onDelete: () -> Unit,
+    onReprocess: () -> Unit,
+) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp)) {
             Row(verticalAlignment = Alignment.Top) {
                 Text(entry.rawText, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
                 Spacer(Modifier.height(0.dp))
                 StatusBadge(entry.status)
+            }
+            // Причина неудачи ИИ: «ошибка ИИ» без объяснения ничем не помогает.
+            entry.aiError?.let { reason ->
+                Text(
+                    reason,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(top = 6.dp),
+                )
+            }
+            project?.let {
+                Text(
+                    if (it.aiEnabled) it.name else "${it.name} · ИИ выкл.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color(0xFF6B7382),
+                    modifier = Modifier.padding(top = 6.dp),
+                )
             }
             entry.structured?.let { s ->
                 Spacer(Modifier.height(8.dp))

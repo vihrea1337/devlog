@@ -12,6 +12,7 @@ import retrofit2.http.DELETE
 import retrofit2.http.GET
 import retrofit2.http.POST
 import retrofit2.http.Path
+import retrofit2.http.Query
 
 /**
  * Описание "ручек" REST API DevLog. Retrofit по этому интерфейсу сам сгенерирует код запросов.
@@ -30,9 +31,13 @@ interface DevLogApi {
     @GET("api/me")
     suspend fun me(): UserDto
 
-    /** GET /api/entries — лента записей текущего пользователя. */
+    /** GET /api/entries — лента записей текущего пользователя (можно сузить до проекта). */
     @GET("api/entries")
-    suspend fun getEntries(): List<EntryDto>
+    suspend fun getEntries(@Query("projectId") projectId: String? = null): List<EntryDto>
+
+    /** GET /api/projects — проекты пользователя (для фильтра и привязки записей). */
+    @GET("api/projects")
+    suspend fun getProjects(): List<ProjectDto>
 
     /** POST /api/entries — добавить запись; сервер вернёт её с id и статусом "queued". */
     @POST("api/entries")
