@@ -11,7 +11,6 @@ import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import kotlinx.serialization.Serializable
-import java.time.LocalDate
 import java.util.UUID
 
 // --- DTO отчётов ---
@@ -47,10 +46,19 @@ fun Route.reportRoutes() {
         // Собрать отчёт за период (может занять секунды, если включён ИИ).
         post("/api/reports") {
             val body = call.receive<NewReport>()
-            val from = LocalDate.parse(body.periodStart)
-            val to = LocalDate.parse(body.periodEnd)
-            val projectId = body.projectId?.let(UUID::fromString)
-            val title = body.title?.trim()?.ifBlank { null } ?: "Отчёт за $from — $to"
+            val from = parseDateOrNull(body.periodStart)
+                ?: return@post call.badRequest("Некорректная дата начала периода, нужен формат ГГГГ-ММ-ДД")
+            val to = parseDateOrNull(body.periodEnd)
+                ?: return@post call.badRequest("Некорректная дата конца периода, нужен формат ГГГГ-ММ-ДД")
+            if (to.isBefore(from)) return@post call.badRequest("Конец периода раньше начала")
+            val projectId = body.projectId?.takeIf { it.isNotBlank() }?.let {
+                parseUuidOrNull(it) ?: return@post call.badRequest("Некорректный id проекта")
+            }
+            // Отчёт можно строить только по своему проекту.
+            if (projectId != null && ProjectRepository.getById(call.userId(), projectId) == null) {
+                return@post call.badRequest("Проект не найден")
+            }
+            val title = body.title?.trim()?.ifBlank { null }?.take(200) ?: "Отчёт за $from — $to"
             val md = ReportGenerator.generate(call.userId(), title, from, to, projectId)
             call.respond(ReportRepository.create(call.userId(), projectId, title, from, to, body.format, md))
         }
@@ -60,14 +68,14 @@ fun Route.reportRoutes() {
         }
 
         get("/api/reports/{id}") {
-            val id = call.reportId() ?: return@get call.respond(HttpStatusCode.BadRequest, ErrorResponse("Некорректный id"))
+            val id = call.reportId() ?: return@get call.badRequest("Некорректный id")
             val report = ReportRepository.getById(call.userId(), id)
             if (report == null) call.respond(HttpStatusCode.NotFound) else call.respond(report)
         }
 
         // Включить публичную ссылку (для работодателя): выдаём/переиспользуем share-токен.
         post("/api/reports/{id}/share") {
-            val id = call.reportId() ?: return@post call.respond(HttpStatusCode.BadRequest, ErrorResponse("Некорректный id"))
+            val id = call.reportId() ?: return@post call.badRequest("Некорректный id")
             val report = ReportRepository.getById(call.userId(), id)
             if (report == null) {
                 call.respond(HttpStatusCode.NotFound)
@@ -91,14 +99,15 @@ fun Route.reportRoutes() {
     }
 }
 
-private fun ApplicationCall.reportId(): UUID? =
-    runCatching { UUID.fromString(parameters["id"]) }.getOrNull()
+private fun ApplicationCall.reportId(): UUID? = parameters["id"]?.let(::parseUuidOrNull)
 
 /** Публичная HTML-страница отчёта (Markdown → HTML). */
 private fun renderReportPage(report: ReportDto): String = """
 <!doctype html>
 <html lang="ru"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Отчёт открыт по секретной ссылке, но попасть в поисковую выдачу он не должен. -->
+<meta name="robots" content="noindex, nofollow">
 <title>${Markdown.escapeHtml(report.title)} — DevLog</title>
 <style>
   body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;max-width:760px;margin:0 auto;padding:32px 18px;color:#1c2330;line-height:1.6;background:#fff}

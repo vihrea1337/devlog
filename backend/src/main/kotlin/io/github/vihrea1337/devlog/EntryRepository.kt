@@ -43,32 +43,34 @@ object EntryRepository {
         return base.copy(structured = EntryStructuredRepository.forEntry(id))
     }
 
-    fun create(userId: UUID, body: NewEntry): EntryDto = transaction {
+    /** Создать запись из уже проверенных данных (разбор и проверки — в Validation.kt). */
+    fun create(userId: UUID, input: ValidEntryInput): EntryDto = transaction {
         val newId = UUID.randomUUID()
         val now = Instant.now()
         Entries.insert {
             it[id] = newId
             it[Entries.userId] = userId
-            it[projectId] = body.projectId?.let(UUID::fromString)
-            it[occurredOn] = LocalDate.parse(body.occurredOn)
-            it[rawText] = body.rawText
-            it[sourceType] = body.sourceType
+            it[projectId] = input.projectId
+            it[occurredOn] = input.occurredOn
+            it[rawText] = input.rawText
+            it[sourceType] = input.sourceType
             it[status] = "queued"
-            it[timeSpentMin] = body.timeSpentMin
+            it[timeSpentMin] = input.timeSpentMin
             it[createdAt] = now
             it[updatedAt] = now
         }
         findInTx(userId, newId)!!
     }
 
-    /** Частичная правка: меняем только переданные (не-null) поля. */
-    fun update(userId: UUID, id: UUID, body: UpdateEntry): EntryDto? {
+    /** Частичная правка: меняем только переданные поля. */
+    fun update(userId: UUID, id: UUID, patch: ValidEntryPatch): EntryDto? {
         val base = transaction {
             val changed = Entries.update({ (Entries.id eq id) and (Entries.userId eq userId) }) {
-                if (body.rawText != null) it[rawText] = body.rawText
-                if (body.occurredOn != null) it[occurredOn] = LocalDate.parse(body.occurredOn)
-                if (body.timeSpentMin != null) it[timeSpentMin] = body.timeSpentMin
-                if (body.projectId != null) it[projectId] = UUID.fromString(body.projectId)
+                if (patch.rawText != null) it[rawText] = patch.rawText
+                if (patch.occurredOn != null) it[occurredOn] = patch.occurredOn
+                if (patch.timeSpentMin != null) it[timeSpentMin] = patch.timeSpentMin
+                if (patch.clearProject) it[projectId] = null
+                else if (patch.projectId != null) it[projectId] = patch.projectId
                 it[updatedAt] = Instant.now()
             }
             if (changed == 0) null else findInTx(userId, id)

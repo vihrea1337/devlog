@@ -11,7 +11,6 @@ import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.put
 import kotlinx.serialization.Serializable
-import java.time.LocalDate
 import java.util.UUID
 
 // --- DTO записей ---
@@ -67,21 +66,25 @@ data class EntryDto(
 fun Route.entryRoutes() = authenticate("auth-jwt") {
 
     get("/api/entries") {
-        val from = call.request.queryParameters["from"]?.let(LocalDate::parse)
-        val to = call.request.queryParameters["to"]?.let(LocalDate::parse)
-        val projectId = call.request.queryParameters["projectId"]?.let(UUID::fromString)
+        // Кривой параметр в адресе — ошибка клиента (400), а не поломка сервера (500).
+        val fromRaw = call.request.queryParameters["from"]
+        val toRaw = call.request.queryParameters["to"]
+        val projectRaw = call.request.queryParameters["projectId"]
+        val from = fromRaw?.let { parseDateOrNull(it) ?: return@get call.badRequest("Некорректная дата from") }
+        val to = toRaw?.let { parseDateOrNull(it) ?: return@get call.badRequest("Некорректная дата to") }
+        val projectId = projectRaw?.takeIf { it.isNotBlank() }?.let {
+            parseUuidOrNull(it) ?: return@get call.badRequest("Некорректный id проекта")
+        }
         call.respond(EntryRepository.list(call.userId(), from, to, projectId))
     }
 
     post("/api/entries") {
-        val body = call.receive<NewEntry>()
-        if (body.rawText.isBlank()) {
-            call.respond(HttpStatusCode.BadRequest, ErrorResponse("Текст записи пуст"))
-            return@post
+        val input = when (val checked = validateNewEntry(call.userId(), call.receive<NewEntry>())) {
+            is Validated.Invalid -> return@post call.badRequest(checked.message)
+            is Validated.Ok -> checked.value
         }
-        val saved = EntryRepository.create(call.userId(), body)
-        val projUuid = body.projectId?.let(UUID::fromString)
-        if (!ProjectRepository.isAiEnabled(call.userId(), projUuid)) {
+        val saved = EntryRepository.create(call.userId(), input)
+        if (!ProjectRepository.isAiEnabled(call.userId(), input.projectId)) {
             // Проект с выключенным ИИ (конфиденциально) — в Groq не отправляем, помечаем черновиком.
             EntryRepository.setStatus(call.userId(), UUID.fromString(saved.id), "draft")
             call.respond(saved.copy(status = "draft"))
@@ -93,25 +96,45 @@ fun Route.entryRoutes() = authenticate("auth-jwt") {
     }
 
     get("/api/entries/{id}") {
-        val id = call.entryId() ?: return@get call.respond(HttpStatusCode.BadRequest, ErrorResponse("Некорректный id"))
+        val id = call.entryId() ?: return@get call.badRequest("Некорректный id")
         val entry = EntryRepository.getById(call.userId(), id)
         if (entry == null) call.respond(HttpStatusCode.NotFound) else call.respond(entry)
     }
 
     put("/api/entries/{id}") {
-        val id = call.entryId() ?: return@put call.respond(HttpStatusCode.BadRequest, ErrorResponse("Некорректный id"))
-        val updated = EntryRepository.update(call.userId(), id, call.receive<UpdateEntry>())
-        if (updated == null) call.respond(HttpStatusCode.NotFound) else call.respond(updated)
+        val id = call.entryId() ?: return@put call.badRequest("Некорректный id")
+        val patch = when (val checked = validateEntryPatch(call.userId(), call.receive<UpdateEntry>())) {
+            is Validated.Invalid -> return@put call.badRequest(checked.message)
+            is Validated.Ok -> checked.value
+        }
+        val updated = EntryRepository.update(call.userId(), id, patch)
+        if (updated == null) {
+            call.respond(HttpStatusCode.NotFound)
+            return@put
+        }
+        // Текст поменялся — структура от ИИ относится к старому тексту, она больше не верна.
+        // Ставим запись в очередь заново (или в черновик, если у проекта ИИ выключен).
+        if (patch.rawText == null) {
+            call.respond(updated)
+            return@put
+        }
+        val projUuid = updated.projectId?.let(UUID::fromString)
+        if (ProjectRepository.isAiEnabled(call.userId(), projUuid)) {
+            EntryRepository.requeueForAi(call.userId(), id)
+        } else {
+            EntryRepository.setStatus(call.userId(), id, "draft")
+        }
+        call.respond(EntryRepository.getById(call.userId(), id) ?: updated)
     }
 
     delete("/api/entries/{id}") {
-        val id = call.entryId() ?: return@delete call.respond(HttpStatusCode.BadRequest, ErrorResponse("Некорректный id"))
+        val id = call.entryId() ?: return@delete call.badRequest("Некорректный id")
         val removed = EntryRepository.delete(call.userId(), id)
         call.respond(if (removed) HttpStatusCode.NoContent else HttpStatusCode.NotFound)
     }
 
     post("/api/entries/{id}/reprocess") {
-        val id = call.entryId() ?: return@post call.respond(HttpStatusCode.BadRequest, ErrorResponse("Некорректный id"))
+        val id = call.entryId() ?: return@post call.badRequest("Некорректный id")
         val entry = EntryRepository.getById(call.userId(), id)
         if (entry == null) {
             call.respond(HttpStatusCode.NotFound)
@@ -131,5 +154,8 @@ fun Route.entryRoutes() = authenticate("auth-jwt") {
 }
 
 /** Разобрать path-параметр {id} в UUID; вернуть null, если он битый. */
-private fun ApplicationCall.entryId(): UUID? =
-    runCatching { UUID.fromString(parameters["id"]) }.getOrNull()
+private fun ApplicationCall.entryId(): UUID? = parameters["id"]?.let(::parseUuidOrNull)
+
+/** Ответ 400 с понятным текстом: клиент прислал что-то не то. */
+suspend fun ApplicationCall.badRequest(message: String) =
+    respond(HttpStatusCode.BadRequest, ErrorResponse(message))

@@ -10,6 +10,7 @@ import io.ktor.server.auth.jwt.jwt
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.http.content.staticResources
 import io.ktor.server.netty.Netty
+import io.ktor.server.plugins.BadRequestException
 import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.server.plugins.statuspages.StatusPages
 import io.ktor.server.response.respond
@@ -39,6 +40,7 @@ fun main() {
 
     val port = System.getenv("PORT")?.toIntOrNull() ?: 8080
     val host = System.getenv("HOST") ?: "127.0.0.1"
+    requireSecureSecret(host)
     embeddedServer(Netty, port = port, host = host) {
         module()
     }.start(wait = true)
@@ -54,6 +56,11 @@ fun Application.module() {
 
     // Единая обработка непойманных ошибок: пишем в лог и отдаём аккуратный JSON, а не стектрейс.
     install(StatusPages) {
+        // Тело запроса — не тот JSON (нет обязательного поля, не тот тип). Виноват клиент → 400.
+        exception<BadRequestException> { call, cause ->
+            call.application.environment.log.info("Некорректный запрос: ${cause.message}")
+            call.respond(HttpStatusCode.BadRequest, ErrorResponse("Некорректный формат запроса"))
+        }
         exception<Throwable> { call, cause ->
             call.application.environment.log.error("Необработанная ошибка запроса", cause)
             call.respond(HttpStatusCode.InternalServerError, ErrorResponse("Внутренняя ошибка сервера"))
@@ -92,6 +99,25 @@ fun Application.module() {
         // Веб-страница из resources/static (index.html). Данные за ней всё равно под токеном.
         staticResources("/", "static")
     }
+}
+
+/**
+ * Не дать серверу выйти наружу с секретом подписи токенов из исходников.
+ *
+ * JWT подписывается секретом. Если секрет общеизвестен, кто угодно соберёт себе токен
+ * с чужим userId и войдёт под любым пользователем. Локально (слушаем только 127.0.0.1,
+ * снаружи не достучаться) это терпимо и удобно, поэтому там только предупреждение.
+ * А если слушаем внешний адрес (в Docker это 0.0.0.0) — отказываемся стартовать.
+ */
+private fun requireSecureSecret(host: String) {
+    if (!JwtService.usingDevSecret) return
+    val localOnly = host == "127.0.0.1" || host == "localhost" || host == "::1"
+    check(localOnly) {
+        "Отказ запуска: сервер слушает $host, но JWT_SECRET не задан — токены подписаны " +
+            "секретом из исходников, и любой сможет войти под чужим аккаунтом. " +
+            "Задайте переменную окружения JWT_SECRET (в проде — devlog.env)."
+    }
+    println("ВНИМАНИЕ: JWT_SECRET не задан, используется секрет для разработки. Только для localhost!")
 }
 
 /** Ответ /health: сериализуется в {"status":"ok"}. */

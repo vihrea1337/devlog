@@ -55,8 +55,14 @@ class AiWorkerTest {
     }
 
     private fun newEntry(text: String = "чинил баг с виджетом"): UUID {
-        val dto = EntryRepository.create(userId, NewEntry(occurredOn = "2026-08-12", rawText = text))
-        return UUID.fromString(dto.id)
+        val input = ValidEntryInput(
+            occurredOn = java.time.LocalDate.parse("2026-08-12"),
+            rawText = text,
+            projectId = null,
+            sourceType = "manual",
+            timeSpentMin = null,
+        )
+        return UUID.fromString(EntryRepository.create(userId, input).id)
     }
 
     private fun statusOf(id: UUID): String = EntryRepository.getById(userId, id)!!.status

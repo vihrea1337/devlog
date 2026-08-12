@@ -15,8 +15,17 @@ import java.util.UUID
  * локально — дефолт для разработки.
  */
 object JwtService {
-    private val secret = System.getenv("JWT_SECRET") ?: "dev-secret-change-me"
+    private const val DEV_SECRET = "dev-secret-change-me"
+
+    private val secret = System.getenv("JWT_SECRET")?.trim()?.ifEmpty { null } ?: DEV_SECRET
     private val algorithm = Algorithm.HMAC256(secret)
+
+    /**
+     * Работаем ли на общеизвестном секрете из исходников. Если да, подделать токен и войти
+     * под любым пользователем может кто угодно — наружу такой сервер выпускать нельзя
+     * (проверка при старте — в Application.kt).
+     */
+    val usingDevSecret: Boolean get() = secret == DEV_SECRET
 
     const val ISSUER = "devlog"          // кто выдал токен
     const val AUDIENCE = "devlog-users"  // для кого он
