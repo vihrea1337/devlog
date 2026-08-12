@@ -96,6 +96,8 @@ fun Application.module() {
         entryRoutes()
         // Отчёты (под токеном) + публичный просмотр по ссылке /r/{token}.
         reportRoutes()
+        // Статистика активности: календарь года и серии дней.
+        statsRoutes()
         // Веб-страница из resources/static (index.html). Данные за ней всё равно под токеном.
         staticResources("/", "static")
     }

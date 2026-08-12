@@ -52,6 +52,22 @@
   .err { color: var(--err); font-size: 13px; min-height: 18px; }
   .ai-err { margin-top: 8px; font-size: 12px; color: var(--err); background: #fbe9e9; padding: 6px 9px; border-radius: 6px; }
   .hint-row { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; margin-top: 4px; }
+  /* Календарь активности: 7 строк (дни недели), недели идут колонками — как контрибуции на GitHub. */
+  .hm-scroll { overflow-x: auto; padding-bottom: 4px; }
+  .heatmap { display: grid; grid-template-rows: repeat(7, 10px); grid-auto-flow: column;
+    grid-auto-columns: 10px; gap: 3px; width: max-content; }
+  .hm-months { display: grid; grid-auto-flow: column; grid-auto-columns: 10px; gap: 3px;
+    width: max-content; font-size: 10px; color: var(--muted); height: 14px; }
+  .hm-cell { width: 10px; height: 10px; border-radius: 2px; background: #e9ecf1; cursor: pointer; }
+  .hm-cell.l1 { background: #bcd0fb; } .hm-cell.l2 { background: #8fb0f8; }
+  .hm-cell.l3 { background: #5f8bf4; } .hm-cell.l4 { background: #3b6ef5; }
+  .hm-cell.hm-out { visibility: hidden; }
+  .hm-cell.hm-sel { outline: 2px solid var(--ink); outline-offset: 1px; }
+  .streak { font-size: 15px; font-weight: 700; }
+  .stats-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px;
+    flex-wrap: wrap; margin-bottom: 10px; }
+  .day-chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600;
+    background: #eef2fe; color: var(--accent); padding: 3px 9px; border-radius: 6px; cursor: pointer; }
   .counter-over { color: var(--err); font-weight: 600; }
   .edit-box { width: 100%; }
   .switch { text-align: center; margin-top: 10px; font-size: 14px; }
@@ -115,6 +131,18 @@
       <span class="muted" style="font-size:12px; margin-left:8px;">или Ctrl+Enter</span>
     </div>
 
+    <!-- Календарь активности за год + серия дней -->
+    <div class="card" id="statsCard">
+      <div class="stats-head">
+        <span class="streak" id="streakText"></span>
+        <span class="muted" style="font-size:13px;" id="statsSummary"></span>
+      </div>
+      <div class="hm-scroll">
+        <div class="hm-months" id="heatmapMonths"></div>
+        <div class="heatmap" id="heatmap"></div>
+      </div>
+    </div>
+
     <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
       <select id="feedFilter" style="max-width:220px;"><option value="">Все проекты</option></select>
       <div style="display:flex; gap:8px;">
@@ -122,6 +150,9 @@
         <button class="ghost" id="reportBtn">Отчёт за месяц</button>
         <button class="ghost" id="refresh">Обновить</button>
       </div>
+    </div>
+    <div id="dayFilterRow" class="hidden" style="margin-top:10px;">
+      <span class="day-chip" id="dayFilterChip"></span>
     </div>
     <div id="feed"></div>
 
@@ -186,6 +217,13 @@
 
   const esc = s => (s ?? '').replace(/[&<>"]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
   const $ = id => document.getElementById(id);
+
+  // Дата в виде ГГГГ-ММ-ДД по МЕСТНОМУ времени.
+  // toISOString() отдаёт время по Гринвичу: восточнее Лондона (Сургут — UTC+5) местная
+  // полночь там ещё «вчера», и дата съезжала на день назад.
+  const ymd = d => d.getFullYear() + '-' +
+    String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  const parseYmd = s => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); };
 
   // --- Переключение login/register ---
   function setMode(m) {
@@ -283,6 +321,7 @@
         updateCounter();
         $('rawText').focus();
         await loadEntries();
+        loadStats();
       } else {
         const data = await res.json().catch(() => ({}));
         $('addErr').textContent = data.error || 'Не удалось сохранить (' + res.status + ')';
@@ -393,15 +432,23 @@
 
   async function loadEntries() {
     if (refreshTimer) { clearTimeout(refreshTimer); refreshTimer = null; }
-    const pid = $('feedFilter').value;
-    const res = await api('/api/entries' + (pid ? '?projectId=' + encodeURIComponent(pid) : ''));
+    const params = new URLSearchParams();
+    if ($('feedFilter').value) params.set('projectId', $('feedFilter').value);
+    if (dayFilter) { params.set('from', dayFilter); params.set('to', dayFilter); }
+    const query = params.toString();
+    const res = await api('/api/entries' + (query ? '?' + query : ''));
     if (res.status === 401) { clearToken(); location.reload(); return; }
     const entries = await res.json();
     const feed = $('feed');
-    if (!entries.length) { feed.innerHTML = '<div class="muted" style="margin-top:14px;">Пока пусто. Добавьте первую запись выше.</div>'; return; }
+    if (!entries.length) {
+      feed.innerHTML = '<div class="muted" style="margin-top:14px;">'
+        + (dayFilter ? 'За этот день записей нет.' : 'Пока пусто. Добавьте первую запись выше.')
+        + '</div>';
+      return;
+    }
     let html = '', lastDay = null;
     for (const e of entries) {
-      if (e.occurredOn !== lastDay) { html += `<div class="day">${esc(e.occurredOn)}</div>`; lastDay = e.occurredOn; }
+      if (e.occurredOn !== lastDay) { html += `<div class="day">${esc(dayTitle(e.occurredOn))}</div>`; lastDay = e.occurredOn; }
       html += entryHtml(e);
     }
     feed.innerHTML = html;
@@ -414,6 +461,7 @@
         if (!confirm('Удалить запись?')) return;
         await api('/api/entries/' + id, { method: 'DELETE' });
         loadEntries();
+        loadStats();
       };
       card.querySelector('.act-reprocess').onclick = async () => {
         await api('/api/entries/' + id + '/reprocess', { method: 'POST' });
@@ -427,6 +475,110 @@
     }
   }
 
+  // --- Календарь активности («летопись» одним взглядом) ---
+  const MONTHS_SHORT = ['янв','фев','мар','апр','май','июн','июл','авг','сен','окт','ноя','дек'];
+  const MONTHS_GEN = ['января','февраля','марта','апреля','мая','июня','июля',
+    'августа','сентября','октября','ноября','декабря'];
+  const WEEKDAYS = ['воскресенье','понедельник','вторник','среда','четверг','пятница','суббота'];
+
+  /** Заголовок дня в ленте: «сегодня, 12 августа» вместо «2026-08-12». */
+  function dayTitle(key) {
+    const d = parseYmd(key);
+    const now = new Date();
+    const yesterday = new Date(now);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const base = d.getDate() + ' ' + MONTHS_GEN[d.getMonth()] +
+      (d.getFullYear() !== now.getFullYear() ? ' ' + d.getFullYear() : '');
+    if (key === ymd(now)) return 'сегодня, ' + base;
+    if (key === ymd(yesterday)) return 'вчера, ' + base;
+    return WEEKDAYS[d.getDay()] + ', ' + base;
+  }
+
+  function levelOf(n) {
+    if (!n) return 0;
+    if (n === 1) return 1;
+    if (n <= 2) return 2;
+    if (n <= 4) return 3;
+    return 4;
+  }
+
+  function pluralDays(n) {
+    const t = n % 100, o = n % 10;
+    if (t >= 11 && t <= 14) return 'дней';
+    if (o === 1) return 'день';
+    if (o >= 2 && o <= 4) return 'дня';
+    return 'дней';
+  }
+
+  function renderHeatmap(s) {
+    const days = s.days || {};
+    const start = parseYmd(s.from), end = parseYmd(s.to);
+    // Сетка идёт колонками по неделям, поэтому начинаем с понедельника той недели, куда попал start.
+    const gridStart = new Date(start);
+    gridStart.setDate(gridStart.getDate() - ((gridStart.getDay() + 6) % 7));
+
+    // Идём ровно понеделями: одна колонка = одна неделя, 7 ячеек сверху вниз.
+    // Подпись месяца ставим на ту колонку, с которой начинается новый месяц.
+    const cells = [], months = [];
+    const cursor = new Date(gridStart);
+    let lastMonth = -1;
+    while (cursor <= end) {
+      const columnMonth = cursor.getMonth();
+      months.push(`<div>${columnMonth !== lastMonth ? MONTHS_SHORT[columnMonth] : ''}</div>`);
+      lastMonth = columnMonth;
+      for (let i = 0; i < 7; i++) {
+        const key = ymd(cursor);
+        const n = days[key] || 0;
+        const outside = cursor < start || cursor > end;
+        const title = outside ? '' : key + ' · ' + (n ? n + ' зап.' : 'нет записей');
+        cells.push(`<div class="hm-cell l${levelOf(n)}${outside ? ' hm-out' : ''}"`
+          + ` title="${title}" data-day="${key}"></div>`);
+        cursor.setDate(cursor.getDate() + 1);
+      }
+    }
+
+    $('heatmap').innerHTML = cells.join('');
+    $('heatmapMonths').innerHTML = months.join('');
+
+    // Клик по дню — показать записи только за этот день (повторный клик снимает фильтр).
+    $('heatmap').querySelectorAll('.hm-cell').forEach(cell => {
+      if (cell.classList.contains('hm-out')) return;
+      cell.onclick = () => setDayFilter(dayFilter === cell.dataset.day ? null : cell.dataset.day);
+    });
+    markSelectedDay();
+
+    const streak = s.currentStreak;
+    $('streakText').textContent = streak
+      ? '🔥 ' + streak + ' ' + pluralDays(streak) + ' подряд'
+      : 'Серия прервана — самое время записать сегодняшнее';
+    $('statsSummary').textContent =
+      `${s.totalEntries} зап. за год · ${s.activeDays} активных дней · рекорд ${s.longestStreak}`;
+  }
+
+  async function loadStats() {
+    const res = await api('/api/stats/activity');
+    if (res.ok) renderHeatmap(await res.json());
+  }
+
+  // --- Фильтр ленты по конкретному дню ---
+  let dayFilter = null;
+
+  function markSelectedDay() {
+    $('heatmap').querySelectorAll('.hm-cell').forEach(c => {
+      c.classList.toggle('hm-sel', !!dayFilter && c.dataset.day === dayFilter);
+    });
+  }
+
+  function setDayFilter(day) {
+    dayFilter = day;
+    $('dayFilterRow').classList.toggle('hidden', !day);
+    if (day) $('dayFilterChip').textContent = 'только ' + day + ' ✕';
+    markSelectedDay();
+    loadEntries();
+  }
+
+  $('dayFilterChip').onclick = () => setDayFilter(null);
+
   // Настройки сервера (включён ли ИИ) — от них зависит, что писать в статусах записей.
   async function loadConfig() {
     const res = await api('/api/config');
@@ -437,9 +589,10 @@
     $('auth').classList.add('hidden');
     $('app').classList.remove('hidden');
     $('who').textContent = user ? user.displayName : '';
-    $('occurredOn').value = new Date().toISOString().slice(0, 10);
+    $('occurredOn').value = ymd(new Date());
     restoreDraft();
     $('rawText').focus();
+    loadStats();
     await loadConfig();
     loadProjects();
     loadEntries();
@@ -509,7 +662,6 @@
 
   // --- Отчёт за текущий месяц ---
   let currentReport = null;
-  const ymd = d => d.toISOString().slice(0, 10);
 
   $('reportBtn').onclick = async () => {
     const now = new Date();
