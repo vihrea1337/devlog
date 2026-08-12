@@ -7,19 +7,23 @@
 Сервер: SSH-алиас из `~/.ssh/config` (`vps` — свой VPS, `brother` — сервер брата),
 рабочая папка `/root/app/lev/devlog`. Ниже в командах подставляй нужный алиас.
 Адрес после деплоя: `https://<домен>:<порт>` — то, что впишешь в `.env` (см. ниже).
-Это первый деплой — база стартует пустой, таблицы приложение создаёт само при запуске.
+Схему базы накатывает Flyway при старте бэкенда (миграции в `V…__.sql`).
 
 ---
 
-## 1. Собрать jar на ПК
+## 1. Собрать дистрибутив на ПК
 
 Из PowerShell в корне репозитория:
 ```powershell
 $env:JAVA_HOME='C:\Program Files\Android\Android Studio\jbr'
 cd backend
-.\gradlew.bat buildFatJar        # -> build/libs/devlog-backend-all.jar
+.\gradlew.bat distTar            # -> build/distributions/devlog-backend-0.1.0.tar
 cd ..
 ```
+
+_В прод едет **дистрибутив**, а не один «толстый» jar: в fat-jar склеиваются файлы
+`META-INF/services`, из-за чего Flyway терял плагины и молча пропускал миграции —
+сервер поднимался с пустой базой. Подробности в `backend/build.gradle.kts`._
 _(Если локальный сервер запущен через `gradlew run` — сначала останови его, Ctrl+C.)_
 
 ## 2. Залить на сервер
@@ -27,8 +31,8 @@ _(Если локальный сервер запущен через `gradlew ru
 ```powershell
 # папку деплоя целиком (создаст /root/app/lev/devlog как копию deploy/server)
 scp -r deploy/server brother:/root/app/lev/devlog
-# и сам jar рядом с его Dockerfile
-scp backend/build/libs/devlog-backend-all.jar brother:/root/app/lev/devlog/backend/
+# и дистрибутив рядом с его Dockerfile (имя ровно devlog-backend.tar — так ждёт Dockerfile)
+scp backend/build/distributions/devlog-backend-0.1.0.tar brother:/root/app/lev/devlog/backend/devlog-backend.tar
 ```
 _(Если `scp -r` ругается, что `/root/app/lev/devlog` уже есть — залей содержимое: `scp -r deploy/server/* brother:/root/app/lev/devlog/`.)_
 
@@ -60,8 +64,8 @@ curl -s https://<домен>:<порт>/health          # ожидаем {"statu
 ## Обновление бэкенда потом
 
 ```powershell
-cd backend; .\gradlew.bat buildFatJar; cd ..
-scp backend/build/libs/devlog-backend-all.jar brother:/root/app/lev/devlog/backend/
+cd backend; .\gradlew.bat distTar; cd ..
+scp backend/build/distributions/devlog-backend-0.1.0.tar brother:/root/app/lev/devlog/backend/devlog-backend.tar
 ```
 ```bash
 cd /root/app/lev/devlog && docker compose up -d --build devlog-backend
@@ -103,3 +107,10 @@ gunzip -c caddy-duckdns.tar.gz | docker load
 
 **Сертификат не выпускается** — проверь, что домен в `.env` написан латиницей и что на
 duckdns.org у него указан IP именно этого сервера.
+
+**Сервер работает, но в базе нет таблиц** (в логах `relation "entries" does not exist`) —
+миграции не применились. Загляни в лог бэкенда: если там `SQL migrations were detected but
+not run because they did not follow the filename convention`, значит в деплой уехал fat-jar
+вместо дистрибутива. В fat-jar теряются файлы `META-INF/services`, Flyway остаётся без своих
+плагинов и молча пропускает миграции. Собирай `./gradlew distTar` и клади на сервер
+`backend/devlog-backend.tar`.

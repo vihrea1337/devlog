@@ -46,6 +46,9 @@ fun migrateSchema(dataSource: DataSource) {
         .locations("classpath:db/migration")
         .baselineOnMigrate(true)
         .baselineVersion("1")
+        // Падать сразу, если файл миграции назван не по правилам. Иначе Flyway молча
+        // пропускает его — сервер стартует с пустой базой и валится на первом же запросе.
+        .validateMigrationNaming(true)
         .load()
         .migrate()
     println(

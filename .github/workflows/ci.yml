@@ -20,11 +20,11 @@ jobs:
           distribution: temurin
           java-version: '21'
           cache: gradle
-      - name: Прогнать тесты и собрать fat-jar
+      - name: Прогнать тесты и собрать дистрибутив
         working-directory: backend
         run: |
           chmod +x ./gradlew
-          ./gradlew test buildFatJar --no-daemon
+          ./gradlew test distTar --no-daemon
 
   android-build:
     name: Android — сборка debug
