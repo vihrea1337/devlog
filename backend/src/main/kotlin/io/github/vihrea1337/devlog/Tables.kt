@@ -19,6 +19,9 @@ object Users : Table("users") {
     val email = varchar("email", 255).uniqueIndex()   // логин, уникальный
     val passwordHash = varchar("password_hash", 255)   // хеш пароля, НЕ открытый пароль
     val displayName = varchar("display_name", 100)
+    // Логин на GitHub — чтобы подтягивать коммиты как сырьё для дневника.
+    // Токен не храним: берём только публичную активность.
+    val githubLogin = varchar("github_login", 39).nullable()
     val createdAt = timestamp("created_at")
     override val primaryKey = PrimaryKey(id)
 }

@@ -105,6 +105,8 @@ fun Application.module() {
         statsRoutes()
         // Живые обновления ленты (SSE), токен берётся из cookie.
         eventRoutes()
+        // Импорт коммитов с GitHub как сырья для дневника.
+        importRoutes()
         // Веб-страница из resources/static (index.html). Данные за ней всё равно под токеном.
         staticResources("/", "static")
     }

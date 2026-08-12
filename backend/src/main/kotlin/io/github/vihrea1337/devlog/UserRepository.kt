@@ -3,6 +3,7 @@ package io.github.vihrea1337.devlog
 import org.jetbrains.exposed.sql.ResultRow
 import org.jetbrains.exposed.sql.insert
 import org.jetbrains.exposed.sql.selectAll
+import org.jetbrains.exposed.sql.update
 import org.jetbrains.exposed.sql.transactions.transaction
 import java.time.Instant
 import java.util.UUID
@@ -13,6 +14,8 @@ data class UserRow(
     val email: String,
     val passwordHash: String,
     val displayName: String,
+    /** Логин на GitHub для импорта коммитов; null — не привязан. */
+    val githubLogin: String? = null,
 )
 
 /**
@@ -44,10 +47,16 @@ object UserRepository {
         UserRow(newId, email, passwordHash, displayName)
     }
 
+    /** Привязать (или отвязать, передав null) логин GitHub. */
+    fun setGithubLogin(userId: UUID, login: String?): Boolean = transaction {
+        Users.update({ Users.id eq userId }) { it[githubLogin] = login } > 0
+    }
+
     private fun ResultRow.toUserRow() = UserRow(
         id = this[Users.id],
         email = this[Users.email],
         passwordHash = this[Users.passwordHash],
         displayName = this[Users.displayName],
+        githubLogin = this[Users.githubLogin],
     )
 }

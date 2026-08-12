@@ -170,6 +170,16 @@ flowchart LR
 - `GET /api/stats/activity?from=&to=` → `{days, currentStreak, longestStreak, totalEntries,
   activeDays}` — данные для календаря активности за год и счётчика дней подряд
 
+**Импорт**
+- `POST /api/import/github` `{periodStart, periodEnd, projectId?}` →
+  `{days, commits, created, skipped}` — тянет публичную активность GitHub
+  (`/users/{login}/events/public`, без токена) и складывает коммиты каждого дня
+  в одну запись дневника. Повторный импорт того же дня ничего не дублирует:
+  id записи вычисляется из пользователя и даты.
+  Ограничения источника: только открытые репозитории, ~90 дней, до 300 событий.
+- Логин GitHub хранится в профиле (`PUT /api/me {githubLogin}`); **токен не храним** —
+  приватные репозитории потребуют его, и тогда появится отдельное хранилище секретов.
+
 **Служебное**
 - `GET /health` → `{"status":"ok"}` (открыта, для мониторинга и деплоя)
 - `GET /api/config` → `{aiEnabled, aiDailyLimit}` — включён ли ИИ на сервере.

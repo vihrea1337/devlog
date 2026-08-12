@@ -214,6 +214,7 @@
       <select id="feedFilter" style="max-width:220px;"><option value="">Все проекты</option></select>
       <div style="display:flex; gap:8px;">
         <button class="ghost" id="projectsBtn">Проекты</button>
+        <button class="ghost" id="githubBtn">GitHub</button>
         <button class="ghost" id="reportBtn">Отчёты</button>
         <button class="ghost" id="refresh">Обновить</button>
       </div>
@@ -244,6 +245,34 @@
         </div>
       </div>
       <button class="primary" id="addProjectBtn" style="margin-top:8px;">Добавить проект</button>
+    </div>
+
+    <!-- Панель импорта коммитов с GitHub -->
+    <div id="githubPanel" class="card hidden">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <b>Импорт коммитов с GitHub</b>
+        <button class="ghost" id="githubClose">Закрыть</button>
+      </div>
+      <div class="muted" style="font-size:13px; margin-top:4px;">
+        Коммиты за день превращаются в одну запись дневника — дальше её разбирает ИИ,
+        как обычную заметку. Берётся публичная активность: только открытые репозитории
+        и примерно последние 90 дней.
+      </div>
+
+      <label>Логин на GitHub</label>
+      <div class="row" style="align-items:flex-end;">
+        <div style="flex:2;"><input id="githubLogin" placeholder="например, vihrea1337"></div>
+        <div style="flex:0 0 auto; padding-bottom:0;">
+          <button class="ghost" id="githubSave">Сохранить</button>
+        </div>
+      </div>
+
+      <div class="row" style="margin-top:10px;">
+        <div><label>С какого дня</label><input id="importFrom" type="date"></div>
+        <div><label>По какой день</label><input id="importTo" type="date"></div>
+      </div>
+      <button class="primary" id="importBtn" style="margin-top:10px;">Импортировать</button>
+      <span class="muted" id="importStatus" style="font-size:13px; margin-left:8px;"></span>
     </div>
 
     <!-- Панель отчётов -->
@@ -777,6 +806,7 @@
     $('auth').classList.add('hidden');
     $('app').classList.remove('hidden');
     $('who').textContent = user ? user.displayName : '';
+    if (user && user.githubLogin) $('githubLogin').value = user.githubLogin;
     $('occurredOn').value = ymd(new Date());
     restoreDraft();
     $('rawText').focus();
@@ -846,6 +876,53 @@
       }
     } finally {
       $('addProjectBtn').disabled = false;
+    }
+  };
+
+  // --- Импорт коммитов с GitHub ---
+  // Киллер-фича из концепции: «нет истории кроме коммитов» превращается в дневник,
+  // который заполняется сам. Токен не нужен — берём публичную активность.
+  $('githubBtn').onclick = () => {
+    $('githubPanel').classList.toggle('hidden');
+    if ($('githubPanel').classList.contains('hidden')) return;
+    if (!$('importFrom').value) {
+      const weekAgo = new Date();
+      weekAgo.setDate(weekAgo.getDate() - 7);
+      $('importFrom').value = ymd(weekAgo);
+      $('importTo').value = ymd(new Date());
+    }
+    $('githubPanel').scrollIntoView({ behavior: 'smooth' });
+  };
+  $('githubClose').onclick = () => $('githubPanel').classList.add('hidden');
+
+  $('githubSave').onclick = async () => {
+    const res = await api('/api/me', { method: 'PUT', body: { githubLogin: $('githubLogin').value.trim() } });
+    const data = await res.json().catch(() => ({}));
+    $('importStatus').textContent = res.ok ? 'логин сохранён' : (data.error || 'не сохранилось');
+  };
+
+  $('importBtn').onclick = async () => {
+    $('importBtn').disabled = true;
+    $('importStatus').textContent = 'Спрашиваем GitHub…';
+    try {
+      const res = await api('/api/import/github', {
+        method: 'POST',
+        body: {
+          periodStart: $('importFrom').value,
+          periodEnd: $('importTo').value,
+          projectId: $('feedFilter').value || null,
+        },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { $('importStatus').textContent = data.error || 'Не вышло (' + res.status + ')'; return; }
+      $('importStatus').textContent = data.commits
+        ? `коммитов: ${data.commits}, записей создано: ${data.created}` +
+          (data.skipped ? `, уже было: ${data.skipped}` : '')
+        : 'за этот период публичных коммитов не нашлось';
+      loadEntries();
+      loadStats();
+    } finally {
+      $('importBtn').disabled = false;
     }
   };
 

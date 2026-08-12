@@ -10,6 +10,7 @@ import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
+import io.ktor.server.routing.put
 import kotlinx.serialization.Serializable
 import java.util.UUID
 
@@ -22,7 +23,17 @@ data class RegisterRequest(val email: String, val password: String, val displayN
 data class LoginRequest(val email: String, val password: String)
 
 @Serializable
-data class UserDto(val id: String, val email: String, val displayName: String)
+data class UserDto(
+    val id: String,
+    val email: String,
+    val displayName: String,
+    /** Логин на GitHub, если привязан: с ним работает импорт коммитов. */
+    val githubLogin: String? = null,
+)
+
+/** Тело PUT /api/me: пока меняем только привязку к GitHub. Пустая строка — отвязать. */
+@Serializable
+data class UpdateProfile(val githubLogin: String? = null)
 
 /** Ответ на регистрацию/вход: токен + кто вошёл. */
 @Serializable
@@ -39,6 +50,9 @@ data class ErrorResponse(val error: String)
  */
 @Serializable
 data class ServerConfigDto(val aiEnabled: Boolean, val aiDailyLimit: Int)
+
+/** Правила GitHub: латиница, цифры и дефис, не длиннее 39 символов. */
+private val GITHUB_LOGIN = Regex("^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}$")
 
 /** id текущего пользователя из проверенного JWT (claim "userId"). */
 fun ApplicationCall.userId(): UUID =
@@ -90,7 +104,20 @@ fun Route.authRoutes() {
                 call.respond(user.toDto())
             }
         }
+
+        // Настройки профиля. Сейчас это только логин GitHub для импорта коммитов.
+        put("/api/me") {
+            val body = call.receive<UpdateProfile>()
+            val login = body.githubLogin?.trim()?.removePrefix("@").orEmpty()
+            if (login.isNotEmpty() && !GITHUB_LOGIN.matches(login)) {
+                return@put call.badRequest("Некорректный логин GitHub: латиница, цифры и дефис, до 39 символов")
+            }
+            UserRepository.setGithubLogin(call.userId(), login.ifEmpty { null })
+            val user = UserRepository.findById(call.userId())
+                ?: return@put call.respond(HttpStatusCode.Unauthorized, ErrorResponse("Пользователь не найден"))
+            call.respond(user.toDto())
+        }
     }
 }
 
-private fun UserRow.toDto() = UserDto(id.toString(), email, displayName)
+private fun UserRow.toDto() = UserDto(id.toString(), email, displayName, githubLogin)
