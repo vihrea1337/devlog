@@ -38,6 +38,15 @@ object JwtService {
         .withAudience(AUDIENCE)
         .build()
 
+    /**
+     * Достать id пользователя из токена, проверив подпись. null — токен чужой,
+     * испорченный или протухший. Нужно там, где нельзя прислать заголовок Authorization
+     * (SSE-соединение браузера читает токен из cookie).
+     */
+    fun userIdFromToken(token: String): UUID? = runCatching {
+        UUID.fromString(verifier.verify(token).getClaim("userId").asString())
+    }.getOrNull()
+
     fun makeToken(userId: UUID, email: String): String = JWT.create()
         .withIssuer(ISSUER)
         .withAudience(AUDIENCE)

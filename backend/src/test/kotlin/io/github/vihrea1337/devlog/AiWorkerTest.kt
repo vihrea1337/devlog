@@ -1,5 +1,6 @@
 package io.github.vihrea1337.devlog
 
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.jetbrains.exposed.sql.Database
 import org.jetbrains.exposed.sql.SchemaUtils
@@ -167,6 +168,23 @@ class AiWorkerTest {
         assertTrue(EntryRepository.getById(userId, id)!!.aiError!!.contains("лимит"))
         // И воркер не крутится вхолостую на этом же пользователе.
         assertFalse(worker.runOnce())
+    }
+
+    @Test
+    fun `после обработки прилетает событие для открытых вкладок`() = runBlocking {
+        EntryEventBus.reset()
+        val id = newEntry()
+        val received = kotlinx.coroutines.CompletableDeferred<EntryEvent>()
+        val listener = launch { EntryEventBus.subscribe(userId).collect { received.complete(it) } }
+        kotlinx.coroutines.delay(100) // дать подписке встать
+
+        AiWorker(FakeAi(), limiter = { true }).runOnce()
+
+        val event = kotlinx.coroutines.withTimeout(2000) { received.await() }
+        assertEquals(id.toString(), event.entryId)
+        assertEquals("structured", event.status)
+        listener.cancel()
+        EntryEventBus.reset()
     }
 
     @Test

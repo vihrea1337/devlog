@@ -65,6 +65,9 @@ dependencies {
     implementation("at.favre.lib:bcrypt:0.10.2")
     // Единая обработка ошибок → аккуратные JSON-ответы вместо стектрейса.
     implementation("io.ktor:ktor-server-status-pages")
+    // SSE (Server-Sent Events) — сервер сам шлёт клиенту события по открытому соединению.
+    // Нужен, чтобы лента обновлялась сразу, а не опросом раз в несколько секунд.
+    implementation("io.ktor:ktor-server-sse")
 
     // --- HTTP-клиент для Groq (ИИ-обработка записей) ---
     implementation("io.ktor:ktor-client-core")                // ядро клиента

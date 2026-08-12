@@ -89,12 +89,15 @@ class AiWorker(
             val structured = ai.structure(job.rawText)
             EntryStructuredRepository.save(job.id, structured, ai.modelName)
             EntryRepository.markAiDone(job.id)
+            // Сказать открытым вкладкам, что запись готова — им не придётся опрашивать сервер.
+            EntryEventBus.publish(job.userId, job.id, "structured")
             true
         } catch (e: Exception) {
             // Попытки ещё есть → вернём в очередь; кончились → окончательный failed с причиной.
             val retry = job.attempt < maxAttempts
             val reason = e.message?.takeIf { it.isNotBlank() } ?: e::class.simpleName.orEmpty()
             EntryRepository.markAiFailed(job.id, "Попытка ${job.attempt}: $reason", retry)
+            if (!retry) EntryEventBus.publish(job.userId, job.id, "failed")
             true
         }
     }

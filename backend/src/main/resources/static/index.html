@@ -306,6 +306,8 @@
   let refreshTimer = null;
   let projects = [];  // проекты текущего пользователя
   let serverConfig = { aiEnabled: true, aiDailyLimit: 0 }; // включён ли ИИ на сервере
+  let eventStream = null;   // открытое SSE-соединение: сервер сам сообщает, что запись готова
+  let liveUpdates = false;  // подключено ли оно сейчас
 
   // --- Обёртка над fetch: добавляет токен и JSON-заголовки ---
   async function api(path, { method = 'GET', body = null } = {}) {
@@ -386,7 +388,7 @@
     }
   };
 
-  $('logout').onclick = () => { clearToken(); location.reload(); };
+  $('logout').onclick = () => { stopLiveUpdates(); clearToken(); location.reload(); };
 
   // --- Черновик: не терять недописанную заметку ---
   // Закрыл вкладку на середине мысли — текст должен остаться. Храним его в браузере
@@ -603,9 +605,10 @@
         loadEntries();
       };
     });
-    // Если что-то ещё обрабатывается ИИ — обновим ленту сами через несколько секунд.
-    // При выключенном ИИ ждать нечего, и дёргать сервер вхолостую незачем.
-    if (serverConfig.aiEnabled && entries.some(e => e.status === 'queued' || e.status === 'processing')) {
+    // Запасной вариант: если живого соединения нет (старый браузер, прокси режет SSE),
+    // возвращаемся к опросу раз в несколько секунд. При выключенном ИИ ждать нечего.
+    const waiting = entries.some(e => e.status === 'queued' || e.status === 'processing');
+    if (!liveUpdates && serverConfig.aiEnabled && waiting) {
       refreshTimer = setTimeout(loadEntries, 4000);
     }
   }
@@ -740,6 +743,30 @@
     }, 300);
   });
 
+  // --- Живые обновления: сервер сам сообщает, что запись обработана ---
+  // Раньше страница опрашивала сервер каждые 4 секунды. Теперь держим одно открытое
+  // соединение (SSE) и обновляем ленту по событию. Браузерный EventSource не умеет
+  // добавлять заголовок Authorization, поэтому токен кладём в cookie с узким путём:
+  // она уходит только на /api/events и не светится в адресной строке и логах прокси.
+  function startLiveUpdates() {
+    if (!window.EventSource || !getToken()) return;
+    document.cookie = 'devlog_sse=' + getToken() + '; path=/api/events; SameSite=Strict'
+      + (location.protocol === 'https:' ? '; Secure' : '');
+    stopLiveUpdates();
+    eventStream = new EventSource('/api/events');
+    eventStream.addEventListener('ready', () => { liveUpdates = true; });
+    eventStream.addEventListener('entry', () => { loadEntries(); loadStats(); });
+    eventStream.addEventListener('unauthorized', () => { stopLiveUpdates(); });
+    // При обрыве браузер переподключается сам; до этого работает запасной опрос.
+    eventStream.onerror = () => { liveUpdates = false; };
+  }
+
+  function stopLiveUpdates() {
+    if (eventStream) { eventStream.close(); eventStream = null; }
+    liveUpdates = false;
+    document.cookie = 'devlog_sse=; path=/api/events; Max-Age=0';
+  }
+
   // Настройки сервера (включён ли ИИ) — от них зависит, что писать в статусах записей.
   async function loadConfig() {
     const res = await api('/api/config');
@@ -753,6 +780,7 @@
     $('occurredOn').value = ymd(new Date());
     restoreDraft();
     $('rawText').focus();
+    startLiveUpdates();
     loadStats();
     await loadConfig();
     loadProjects();

@@ -16,6 +16,7 @@ import io.ktor.server.plugins.statuspages.StatusPages
 import io.ktor.server.response.respond
 import io.ktor.server.routing.get
 import io.ktor.server.routing.routing
+import io.ktor.server.sse.SSE
 import kotlinx.serialization.Serializable
 
 /**
@@ -53,6 +54,10 @@ fun main() {
 fun Application.module() {
     // Плагин: превращает наши классы в JSON и обратно.
     install(ContentNegotiation) { json() }
+
+    // SSE — открытое соединение, по которому сервер сам шлёт клиенту события
+    // («запись обработана»), вместо опроса раз в несколько секунд.
+    install(SSE)
 
     // Единая обработка непойманных ошибок: пишем в лог и отдаём аккуратный JSON, а не стектрейс.
     install(StatusPages) {
@@ -98,6 +103,8 @@ fun Application.module() {
         reportRoutes()
         // Статистика активности: календарь года и серии дней.
         statsRoutes()
+        // Живые обновления ленты (SSE), токен берётся из cookie.
+        eventRoutes()
         // Веб-страница из resources/static (index.html). Данные за ней всё равно под токеном.
         staticResources("/", "static")
     }
