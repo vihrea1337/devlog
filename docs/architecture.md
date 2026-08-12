@@ -105,7 +105,8 @@ flowchart LR
 - `GET  /api/me` → `{id, email, displayName}`
 
 **Записи**
-- `GET    /api/entries?from=&to=&projectId=` → список записей
+- `GET    /api/entries?from=&to=&projectId=&q=&tag=` → список записей
+  (`q` — поиск по сырому тексту и по структуре от ИИ; `tag` — точное совпадение тега)
 - `POST   /api/entries` `{projectId?, occurredOn, rawText, source?, timeSpentMin?}`
   → запись (status=`queued`, ИИ обработает в фоне)
 - `GET    /api/entries/{id}` → запись + структурированная часть
@@ -117,10 +118,19 @@ flowchart LR
 - `GET/POST/PUT/DELETE /api/projects`
 
 **Отчёты**
-- `POST /api/reports` `{projectId?, periodStart, periodEnd, format}` → отчёт (ИИ собирает)
-- `GET  /api/reports`, `GET /api/reports/{id}`
-- `POST /api/reports/{id}/share` → `{shareUrl}`
-- `GET  /r/{shareToken}` → публичная HTML-страница отчёта (без авторизации)
+- `POST   /api/reports` `{projectId?, periodStart, periodEnd, format}` → отчёт (ИИ собирает)
+- `GET    /api/reports`, `GET /api/reports/{id}` — в ответе и `contentMd`, и `contentHtml`
+  (готовый HTML рендерит `Markdown.kt` — тот же код, что и публичная страница, без второго
+  конвертера на клиенте)
+- `PUT    /api/reports/{id}` `{contentMd, title?}` — правка перед отправкой работодателю
+- `DELETE /api/reports/{id}`
+- `POST   /api/reports/{id}/share` → `{shareToken, url}`
+- `DELETE /api/reports/{id}/share` — отозвать публичную ссылку
+- `GET    /r/{shareToken}` → публичная HTML-страница отчёта (без авторизации, `noindex`)
+
+**Статистика**
+- `GET /api/stats/activity?from=&to=` → `{days, currentStreak, longestStreak, totalEntries,
+  activeDays}` — данные для календаря активности за год и счётчика дней подряд
 
 **Служебное**
 - `GET /health` → `{"status":"ok"}` (открыта, для мониторинга и деплоя)
