@@ -3,6 +3,7 @@ package io.github.vihrea1337.devlog
 import org.jetbrains.exposed.sql.ResultRow
 import org.jetbrains.exposed.sql.SortOrder
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
+import org.jetbrains.exposed.sql.SqlExpressionBuilder.neq
 import org.jetbrains.exposed.sql.and
 import org.jetbrains.exposed.sql.andWhere
 import org.jetbrains.exposed.sql.deleteWhere
@@ -49,7 +50,8 @@ object EntryRepository {
                 else -> null
             }
 
-            val q = Entries.selectAll().where { Entries.userId eq userId }
+            // Удалённые записи (надгробия) в ленту не попадают — только в синхронизацию.
+            val q = Entries.selectAll().where { (Entries.userId eq userId) and Entries.deletedAt.isNull() }
             if (from != null) q.andWhere { Entries.occurredOn greaterEq from }
             if (to != null) q.andWhere { Entries.occurredOn lessEq to }
             if (projectId != null) q.andWhere { Entries.projectId eq projectId }
@@ -72,14 +74,35 @@ object EntryRepository {
         return base.map { it.copy(structured = structured[UUID.fromString(it.id)]) }
     }
 
+    /**
+     * Существует ли запись с таким id у ДРУГОГО пользователя. UUID случайные, так что
+     * в жизни это столкновение почти невозможно — проверка нужна, чтобы на подобранный
+     * чужой id ответить понятной ошибкой, а не падением на нарушении первичного ключа.
+     */
+    fun existsOwnedByOther(userId: UUID, id: UUID): Boolean = transaction {
+        Entries.selectAll()
+            .where { (Entries.id eq id) and (Entries.userId neq userId) }
+            .limit(1)
+            .any()
+    }
+
     fun getById(userId: UUID, id: UUID): EntryDto? {
         val base = transaction { findInTx(userId, id) } ?: return null
         return base.copy(structured = EntryStructuredRepository.forEntry(id))
     }
 
-    /** Создать запись из уже проверенных данных (разбор и проверки — в Validation.kt). */
+    /**
+     * Создать запись из уже проверенных данных (разбор и проверки — в Validation.kt).
+     *
+     * Если клиент прислал свой id и запись с таким id уже есть, ничего не создаём и
+     * возвращаем существующую: при плохой сети клиент повторяет отправку, и без этого
+     * в дневнике появлялись бы дубли.
+     */
     fun create(userId: UUID, input: ValidEntryInput): EntryDto = transaction {
-        val newId = UUID.randomUUID()
+        input.id?.let { requested ->
+            findInTx(userId, requested, includeDeleted = true)?.let { return@transaction it }
+        }
+        val newId = input.id ?: UUID.randomUUID()
         val now = Instant.now()
         Entries.insert {
             it[id] = newId
@@ -112,8 +135,47 @@ object EntryRepository {
         return base.copy(structured = EntryStructuredRepository.forEntry(id))
     }
 
+    /**
+     * Удаление записи. Строку НЕ стираем: остаётся «надгробие» (проставлен `deleted_at`),
+     * иначе второе устройство, которое было офлайн, никогда не узнает об удалении
+     * и запись у него «воскреснет» при следующей синхронизации.
+     *
+     * При этом содержимое стираем сразу — и текст, и разбор ИИ: пользователь удалил
+     * запись, хранить её текст незачем. Для синхронизации хватает id и времени.
+     */
     fun delete(userId: UUID, id: UUID): Boolean = transaction {
-        Entries.deleteWhere { (Entries.id eq id) and (Entries.userId eq userId) } > 0
+        val now = Instant.now()
+        val affected = Entries.update({
+            (Entries.id eq id) and (Entries.userId eq userId) and Entries.deletedAt.isNull()
+        }) {
+            it[rawText] = ""
+            it[sourceRef] = null
+            it[aiError] = null
+            it[status] = "deleted"
+            it[deletedAt] = now
+            it[updatedAt] = now
+        }
+        if (affected > 0) EntryStructured.deleteWhere { EntryStructured.entryId eq id }
+        affected > 0
+    }
+
+    /**
+     * Что изменилось после момента [since] — основа синхронизации клиентов.
+     * Отдаём и обычные записи, и надгробия (у них `deleted = true`), по возрастанию
+     * `updated_at`: клиент запоминает время последней полученной записи и в следующий раз
+     * просит только то, что новее.
+     */
+    fun changesSince(userId: UUID, since: Instant?, limit: Int): List<EntryDto> {
+        val base = transaction {
+            val q = Entries.selectAll().where { Entries.userId eq userId }
+            if (since != null) q.andWhere { Entries.updatedAt greater since }
+            q.orderBy(Entries.updatedAt to SortOrder.ASC)
+                .limit(limit)
+                .map { it.toEntryDto() }
+        }
+        if (base.isEmpty()) return base
+        val structured = EntryStructuredRepository.forEntries(base.map { UUID.fromString(it.id) })
+        return base.map { it.copy(structured = structured[UUID.fromString(it.id)]) }
     }
 
     /** Сменить статус записи (для постановки в очередь ИИ и перезапуска обработки). */
@@ -236,8 +298,12 @@ object EntryRepository {
         } > 0
     }
 
-    private fun findInTx(userId: UUID, id: UUID): EntryDto? =
-        Entries.selectAll().where { (Entries.id eq id) and (Entries.userId eq userId) }
+    private fun findInTx(userId: UUID, id: UUID, includeDeleted: Boolean = false): EntryDto? =
+        Entries.selectAll()
+            .where {
+                val own = (Entries.id eq id) and (Entries.userId eq userId)
+                if (includeDeleted) own else own and Entries.deletedAt.isNull()
+            }
             .map { it.toEntryDto() }
             .singleOrNull()
 
@@ -253,5 +319,6 @@ object EntryRepository {
         updatedAt = this[Entries.updatedAt].toString(),
         structured = null,
         aiError = this[Entries.aiError],
+        deleted = this[Entries.deletedAt] != null,
     )
 }

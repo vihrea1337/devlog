@@ -55,6 +55,10 @@ object Entries : Table("entries") {
     val aiError = text("ai_error").nullable()              // текст последней ошибки (почему failed)
     val aiStartedAt = timestamp("ai_started_at").nullable() // когда взяли в работу (ловим зависшие)
 
+    // Мягкое удаление: строка остаётся «надгробием», чтобы другие устройства узнали,
+    // что запись удалили. Содержимое при удалении стирается.
+    val deletedAt = timestamp("deleted_at").nullable()
+
     override val primaryKey = PrimaryKey(id)
 
     init {
@@ -62,6 +66,8 @@ object Entries : Table("entries") {
         index(false, userId, occurredOn)
         // Индекс под запрос воркера: «дай записи, ждущие обработки».
         index(false, status)
+        // Индекс под синхронизацию: «что изменилось после такого-то момента».
+        index(false, userId, updatedAt)
     }
 }
 

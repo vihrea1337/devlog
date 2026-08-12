@@ -23,6 +23,12 @@ data class NewEntry(
     val projectId: String? = null,
     val sourceType: String = "manual",
     val timeSpentMin: Int? = null,
+    /**
+     * id, придуманный клиентом (UUID). Нужен для повторной отправки при плохой сети:
+     * сервер по нему поймёт, что это та же самая запись, и не создаст дубль.
+     * Не прислали — сервер придумает свой.
+     */
+    val id: String? = null,
 )
 
 /** Тело PUT /api/entries/{id}: меняем только переданные поля (остальные — null = не трогать). */
@@ -60,6 +66,17 @@ data class EntryDto(
     val structured: StructuredDto? = null,
     /** Почему обработка ИИ не удалась (для статуса failed). null — ошибок не было. */
     val aiError: String? = null,
+    /** Запись удалена. В обычной ленте таких нет — они приходят только в синхронизации. */
+    val deleted: Boolean = false,
+)
+
+/** Ответ синхронизации: изменения по возрастанию updatedAt + время сервера. */
+@Serializable
+data class EntryChangesDto(
+    val entries: List<EntryDto>,
+    val serverTime: String,
+    /** true — упёрлись в лимит, надо запросить следующую порцию с новым since. */
+    val hasMore: Boolean,
 )
 
 /** Ручки записей — все под токеном и в контексте своего пользователя (call.userId()). */
@@ -95,6 +112,27 @@ fun Route.entryRoutes() = authenticate("auth-jwt") {
         // Иначе запись остаётся в статусе queued: её подберёт AiWorker (очередь живёт в базе,
         // поэтому обработка не потеряется, даже если сервер прямо сейчас перезапустят).
         call.respond(saved)
+    }
+
+    /**
+     * Синхронизация: что изменилось после момента `since` (включая удалённые записи).
+     * Клиент запоминает `serverTime` из ответа и в следующий раз присылает его как `since`.
+     */
+    get("/api/entries/changes") {
+        val sinceRaw = call.request.queryParameters["since"]
+        val since = sinceRaw?.takeIf { it.isNotBlank() }?.let {
+            runCatching { java.time.Instant.parse(it) }.getOrNull()
+                ?: return@get call.badRequest("Некорректный since: нужен момент времени вида 2026-08-12T10:00:00Z")
+        }
+        val limit = (call.request.queryParameters["limit"]?.toIntOrNull() ?: 200).coerceIn(1, 500)
+        val changes = EntryRepository.changesSince(call.userId(), since, limit)
+        call.respond(
+            EntryChangesDto(
+                entries = changes,
+                serverTime = java.time.Instant.now().toString(),
+                hasMore = changes.size == limit,
+            ),
+        )
     }
 
     get("/api/entries/{id}") {

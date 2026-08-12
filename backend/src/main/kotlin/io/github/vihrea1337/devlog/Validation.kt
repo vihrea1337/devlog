@@ -28,6 +28,8 @@ data class ValidEntryInput(
     val projectId: UUID?,
     val sourceType: String,
     val timeSpentMin: Int?,
+    /** id от клиента (защита от дублей при повторной отправке); null — придумает сервер. */
+    val id: UUID? = null,
 )
 
 /** Что менять в записи. null = поле не трогаем; projectId = "" означает «убрать из проекта». */
@@ -70,6 +72,14 @@ fun validateNewEntry(userId: UUID, body: NewEntry): Validated<ValidEntryInput> {
         return Validated.Invalid("Потраченное время не может быть отрицательным")
     }
 
+    val clientId = when {
+        body.id.isNullOrBlank() -> null
+        else -> parseUuidOrNull(body.id) ?: return Validated.Invalid("Некорректный id записи")
+    }
+    if (clientId != null && EntryRepository.existsOwnedByOther(userId, clientId)) {
+        return Validated.Invalid("Запись с таким id уже занята")
+    }
+
     return Validated.Ok(
         ValidEntryInput(
             occurredOn = date,
@@ -77,6 +87,7 @@ fun validateNewEntry(userId: UUID, body: NewEntry): Validated<ValidEntryInput> {
             projectId = projectId,
             sourceType = body.sourceType.trim().ifBlank { "manual" }.take(20),
             timeSpentMin = body.timeSpentMin,
+            id = clientId,
         ),
     )
 }
