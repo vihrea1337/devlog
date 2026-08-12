@@ -51,6 +51,9 @@
   .entry-actions { margin-top: 10px; display: flex; gap: 8px; }
   .err { color: var(--err); font-size: 13px; min-height: 18px; }
   .ai-err { margin-top: 8px; font-size: 12px; color: var(--err); background: #fbe9e9; padding: 6px 9px; border-radius: 6px; }
+  .hint-row { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; margin-top: 4px; }
+  .counter-over { color: var(--err); font-weight: 600; }
+  .edit-box { width: 100%; }
   .switch { text-align: center; margin-top: 10px; font-size: 14px; }
   a.link { color: var(--accent); cursor: pointer; text-decoration: none; }
   .hidden { display: none; }
@@ -103,8 +106,13 @@
       </div>
       <label>Заметка</label>
       <textarea id="rawText" placeholder="Напр.: чинил баг с виджетом — updateAll не звался при смене города, поправил, собрал v1.0.1"></textarea>
+      <div class="hint-row">
+        <span class="muted" id="draftHint"></span>
+        <span class="muted" id="counter"></span>
+      </div>
       <div class="err" id="addErr"></div>
       <button class="primary" id="addBtn" style="margin-top:6px;">Добавить запись</button>
+      <span class="muted" style="font-size:12px; margin-left:8px;">или Ctrl+Enter</span>
     </div>
 
     <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
@@ -213,19 +221,72 @@
 
   $('logout').onclick = () => { clearToken(); location.reload(); };
 
+  // --- Черновик: не терять недописанную заметку ---
+  // Закрыл вкладку на середине мысли — текст должен остаться. Храним его в браузере
+  // и восстанавливаем при следующем открытии; после успешной отправки чистим.
+  const DRAFT_KEY = 'devlog_draft';
+  const MAX_TEXT = 20000; // тот же потолок, что на сервере (MAX_RAW_TEXT_LENGTH)
+
+  function updateCounter() {
+    const len = $('rawText').value.length;
+    const el = $('counter');
+    el.textContent = len ? len.toLocaleString('ru') + ' / ' + MAX_TEXT.toLocaleString('ru') : '';
+    el.classList.toggle('counter-over', len > MAX_TEXT);
+  }
+
+  function saveDraft() {
+    const text = $('rawText').value;
+    if (text.trim()) {
+      localStorage.setItem(DRAFT_KEY, text);
+      $('draftHint').textContent = 'черновик сохранён';
+    } else {
+      localStorage.removeItem(DRAFT_KEY);
+      $('draftHint').textContent = '';
+    }
+    updateCounter();
+  }
+
+  function restoreDraft() {
+    const saved = localStorage.getItem(DRAFT_KEY);
+    if (saved) {
+      $('rawText').value = saved;
+      $('draftHint').textContent = 'восстановлен черновик';
+    }
+    updateCounter();
+  }
+
+  $('rawText').addEventListener('input', saveDraft);
+  // Ctrl+Enter (на Mac ⌘+Enter) — отправить, не тянясь к мыши.
+  $('rawText').addEventListener('keydown', e => {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); $('addBtn').click(); }
+  });
+
   // --- Добавление записи ---
   $('addBtn').onclick = async () => {
     const rawText = $('rawText').value.trim();
     $('addErr').textContent = '';
     if (!rawText) { $('addErr').textContent = 'Напишите, что сделали'; return; }
+    if (rawText.length > MAX_TEXT) {
+      $('addErr').textContent = 'Заметка длиннее ' + MAX_TEXT.toLocaleString('ru') + ' символов — разбейте её на несколько';
+      return;
+    }
     $('addBtn').disabled = true;
     try {
       const res = await api('/api/entries', {
         method: 'POST',
         body: { occurredOn: $('occurredOn').value, rawText, projectId: $('entryProject').value || null },
       });
-      if (res.ok) { $('rawText').value = ''; await loadEntries(); }
-      else $('addErr').textContent = 'Не удалось сохранить (' + res.status + ')';
+      if (res.ok) {
+        $('rawText').value = '';
+        localStorage.removeItem(DRAFT_KEY);
+        $('draftHint').textContent = '';
+        updateCounter();
+        $('rawText').focus();
+        await loadEntries();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        $('addErr').textContent = data.error || 'Не удалось сохранить (' + res.status + ')';
+      }
     } finally {
       $('addBtn').disabled = false;
     }
@@ -284,10 +345,50 @@
       ${projChipHtml(e.projectId)}
       ${structuredHtml(e.structured)}
       <div class="entry-actions">
+        <button class="ghost act-edit">Изменить</button>
         <button class="ghost act-reprocess">Переобработать</button>
         <button class="ghost act-delete">Удалить</button>
       </div>
     </div>`;
+  }
+
+  /**
+   * Правка записи прямо в карточке: текст превращается в поле ввода.
+   * После сохранения сервер сам поставит запись обратно в очередь — структура ИИ
+   * относилась к старому тексту и больше не верна.
+   */
+  function startEdit(card, entry) {
+    const raw = card.querySelector('.raw');
+    const actions = card.querySelector('.entry-actions');
+    const box = document.createElement('textarea');
+    box.className = 'edit-box';
+    box.value = entry.rawText;
+    raw.replaceWith(box);
+    actions.innerHTML = '<button class="primary act-save">Сохранить</button>' +
+      '<button class="ghost act-cancel">Отмена</button>';
+    box.focus();
+    box.setSelectionRange(box.value.length, box.value.length);
+
+    const save = async () => {
+      const text = box.value.trim();
+      if (!text) { box.focus(); return; }
+      actions.querySelector('.act-save').disabled = true;
+      const res = await api('/api/entries/' + entry.id, { method: 'PUT', body: { rawText: text } });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        alert(data.error || 'Не удалось сохранить (' + res.status + ')');
+        actions.querySelector('.act-save').disabled = false;
+        return;
+      }
+      loadEntries();
+    };
+
+    actions.querySelector('.act-save').onclick = save;
+    actions.querySelector('.act-cancel').onclick = loadEntries;
+    box.addEventListener('keydown', e => {
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); save(); }
+      if (e.key === 'Escape') loadEntries();
+    });
   }
 
   async function loadEntries() {
@@ -305,8 +406,10 @@
     }
     feed.innerHTML = html;
     // Кнопки на карточках.
+    const byId = Object.fromEntries(entries.map(e => [e.id, e]));
     feed.querySelectorAll('.entry').forEach(card => {
       const id = card.dataset.id;
+      card.querySelector('.act-edit').onclick = () => startEdit(card, byId[id]);
       card.querySelector('.act-delete').onclick = async () => {
         if (!confirm('Удалить запись?')) return;
         await api('/api/entries/' + id, { method: 'DELETE' });
@@ -335,6 +438,8 @@
     $('app').classList.remove('hidden');
     $('who').textContent = user ? user.displayName : '';
     $('occurredOn').value = new Date().toISOString().slice(0, 10);
+    restoreDraft();
+    $('rawText').focus();
     await loadConfig();
     loadProjects();
     loadEntries();
