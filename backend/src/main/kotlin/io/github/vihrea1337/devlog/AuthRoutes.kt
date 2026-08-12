@@ -32,6 +32,14 @@ data class AuthResponse(val token: String, val user: UserDto)
 @Serializable
 data class ErrorResponse(val error: String)
 
+/**
+ * Настройки сервера, важные клиенту. Главное — включён ли ИИ: без ключа записи честно
+ * висят в очереди, и интерфейс должен писать «ИИ выключен», а не притворяться, что вот-вот
+ * обработает.
+ */
+@Serializable
+data class ServerConfigDto(val aiEnabled: Boolean, val aiDailyLimit: Int)
+
 /** id текущего пользователя из проверенного JWT (claim "userId"). */
 fun ApplicationCall.userId(): UUID =
     UUID.fromString(principal<JWTPrincipal>()!!.payload.getClaim("userId").asString())
@@ -69,6 +77,11 @@ fun Route.authRoutes() {
 
     // "Кто я" — только с валидным токеном.
     authenticate("auth-jwt") {
+        // Что умеет этот сервер (включён ли ИИ и какой суточный лимит).
+        get("/api/config") {
+            call.respond(ServerConfigDto(aiEnabled = AiProcessor.enabled, aiDailyLimit = AiLimiter.dailyLimit))
+        }
+
         get("/api/me") {
             val user = UserRepository.findById(call.userId())
             if (user == null) {

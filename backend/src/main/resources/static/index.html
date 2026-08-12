@@ -50,6 +50,7 @@
   .tag { display: inline-block; background: #eef2fe; color: var(--accent); font-size: 12px; padding: 2px 8px; border-radius: 6px; margin: 2px 4px 0 0; }
   .entry-actions { margin-top: 10px; display: flex; gap: 8px; }
   .err { color: var(--err); font-size: 13px; min-height: 18px; }
+  .ai-err { margin-top: 8px; font-size: 12px; color: var(--err); background: #fbe9e9; padding: 6px 9px; border-radius: 6px; }
   .switch { text-align: center; margin-top: 10px; font-size: 14px; }
   a.link { color: var(--accent); cursor: pointer; text-decoration: none; }
   .hidden { display: none; }
@@ -164,6 +165,7 @@
   let mode = 'login'; // login | register
   let refreshTimer = null;
   let projects = [];  // проекты текущего пользователя
+  let serverConfig = { aiEnabled: true, aiDailyLimit: 0 }; // включён ли ИИ на сервере
 
   // --- Обёртка над fetch: добавляет токен и JSON-заголовки ---
   async function api(path, { method = 'GET', body = null } = {}) {
@@ -236,6 +238,15 @@
     structured: ['готово', 'b-structured'], failed: ['ошибка ИИ', 'b-failed'], draft: ['черновик', 'b-draft'],
   };
 
+  // Если ИИ на сервере выключен (нет ключа), запись честно висит в очереди — так и пишем,
+  // а не делаем вид, что вот-вот обработается.
+  function statusOf(e) {
+    if (!serverConfig.aiEnabled && (e.status === 'queued' || e.status === 'processing')) {
+      return ['ИИ выключен', 'b-draft'];
+    }
+    return STATUS[e.status] || [e.status, 'b-draft'];
+  }
+
   const projById = id => projects.find(p => p.id === id);
   function projChipHtml(projectId) {
     const p = projectId && projById(projectId);
@@ -261,12 +272,15 @@
   }
 
   function entryHtml(e) {
-    const [label, cls] = STATUS[e.status] || [e.status, 'b-draft'];
+    const [label, cls] = statusOf(e);
+    // Причину неудачи показываем прямо в карточке: «ошибка ИИ» без объяснения бесполезна.
+    const errHtml = e.aiError ? `<div class="ai-err">${esc(e.aiError)}</div>` : '';
     return `<div class="card entry" data-id="${e.id}">
       <div style="display:flex; justify-content:space-between; gap:10px;">
         <div class="raw">${esc(e.rawText)}</div>
         <span class="badge ${cls}">${label}</span>
       </div>
+      ${errHtml}
       ${projChipHtml(e.projectId)}
       ${structuredHtml(e.structured)}
       <div class="entry-actions">
@@ -304,16 +318,24 @@
       };
     });
     // Если что-то ещё обрабатывается ИИ — обновим ленту сами через несколько секунд.
-    if (entries.some(e => e.status === 'queued' || e.status === 'processing')) {
+    // При выключенном ИИ ждать нечего, и дёргать сервер вхолостую незачем.
+    if (serverConfig.aiEnabled && entries.some(e => e.status === 'queued' || e.status === 'processing')) {
       refreshTimer = setTimeout(loadEntries, 4000);
     }
   }
 
-  function showApp(user) {
+  // Настройки сервера (включён ли ИИ) — от них зависит, что писать в статусах записей.
+  async function loadConfig() {
+    const res = await api('/api/config');
+    if (res.ok) serverConfig = await res.json();
+  }
+
+  async function showApp(user) {
     $('auth').classList.add('hidden');
     $('app').classList.remove('hidden');
     $('who').textContent = user ? user.displayName : '';
     $('occurredOn').value = new Date().toISOString().slice(0, 10);
+    await loadConfig();
     loadProjects();
     loadEntries();
   }

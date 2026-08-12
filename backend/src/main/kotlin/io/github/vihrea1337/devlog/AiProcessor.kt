@@ -8,14 +8,12 @@ import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
+import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.contentType
+import io.ktor.http.isSuccess
 import io.ktor.serialization.kotlinx.json.json
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.launch
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
@@ -46,15 +44,17 @@ private data class GroqResponse(val choices: List<GroqChoice> = emptyList())
 private data class GroqChoice(val message: GroqMessage)
 
 /**
- * Фоновая обработка записей ИИ (Groq): из сырого текста делает структуру
- * (суть/шаги/решения/проблемы/итог/теги) и кладёт в entry_structured.
+ * Обращения к ИИ (Groq): структурирование записи и причёсывание отчёта.
  *
- * ЗАГОТОВКА: без ключа GROQ_API_KEY обработка не запускается — запись остаётся в статусе
- * "queued". Ключ вставляется позже: переменная окружения GROQ_API_KEY (прод) или
- * backend/secrets.properties (ключ groq.api.key, файл уже в .gitignore). В чат/репозиторий
- * ключ не попадает.
+ * Очередью и повторами занимается [AiWorker] — здесь только «сходить в модель и вернуть
+ * результат». Если что-то пошло не так, метод [structure] кидает исключение с внятным
+ * текстом: воркер сохранит его в запись, и пользователь увидит причину, а не просто «ошибка ИИ».
+ *
+ * Без ключа GROQ_API_KEY обработка выключена ([enabled] = false) — записи остаются в очереди.
+ * Ключ берётся из переменной окружения GROQ_API_KEY (прод) или backend/secrets.properties
+ * (ключ groq.api.key, файл в .gitignore). В чат/репозиторий ключ не попадает.
  */
-object AiProcessor {
+object AiProcessor : AiStructurer {
     private const val GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 
     private val apiKey: String =
@@ -69,7 +69,6 @@ object AiProcessor {
     /** Включён ли ИИ (есть ключ и не выключен принудительно). Иначе записи остаются "queued". */
     val enabled: Boolean = apiKey.isNotEmpty() && !forceDisabled
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val parseJson = Json { ignoreUnknownKeys = true }
     private val client = HttpClient(CIO) {
         install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) }
@@ -93,27 +92,15 @@ object AiProcessor {
         )
     }
 
-    /** Запланировать обработку записи в фоне (результат не ждём). */
-    fun schedule(userId: UUID, entryId: UUID, rawText: String) {
-        if (!enabled || rawText.isBlank()) return
-        scope.launch {
-            if (!AiLimiter.tryConsume(userId)) {
-                println("Лимит ИИ на сегодня исчерпан — запись остаётся в статусе 'queued'.")
-                return@launch
-            }
-            EntryRepository.setStatus(userId, entryId, "processing")
-            val structured = runCatching { requestStructured(rawText) }.getOrNull()
-            if (structured != null) {
-                EntryStructuredRepository.save(entryId, structured, model)
-                EntryRepository.setStatus(userId, entryId, "structured")
-            } else {
-                EntryRepository.setStatus(userId, entryId, "failed")
-            }
-        }
-    }
+    override val modelName: String get() = model
 
-    private suspend fun requestStructured(rawText: String): StructuredDto? {
-        val response: GroqResponse = client.post(GROQ_URL) {
+    /**
+     * Разобрать сырой текст записи на структуру. Кидает исключение с понятным текстом,
+     * если ИИ выключен, ответил ошибкой или вернул не тот JSON — воркер запишет причину в запись.
+     */
+    override suspend fun structure(rawText: String): StructuredDto {
+        check(enabled) { "Обработка ИИ выключена на сервере (нет ключа GROQ_API_KEY)" }
+        val response = client.post(GROQ_URL) {
             header(HttpHeaders.Authorization, "Bearer $apiKey")
             contentType(ContentType.Application.Json)
             setBody(
@@ -126,9 +113,14 @@ object AiProcessor {
                     responseFormat = ResponseFormat("json_object"),
                 ),
             )
-        }.body()
-        val content = response.choices.firstOrNull()?.message?.content ?: return null
-        return parseStructured(content)
+        }
+        if (!response.status.isSuccess()) {
+            // Например: кончилась квота Groq, неверный ключ, слишком длинный текст.
+            error("Groq ответил ${response.status.value}: ${response.bodyAsText().take(200)}")
+        }
+        val content = response.body<GroqResponse>().choices.firstOrNull()?.message?.content
+            ?: error("Groq вернул пустой ответ")
+        return parseStructured(content) ?: error("Не удалось разобрать JSON из ответа модели")
     }
 
     /**

@@ -59,6 +59,8 @@ data class EntryDto(
     val createdAt: String,
     val updatedAt: String,
     val structured: StructuredDto? = null,
+    /** Почему обработка ИИ не удалась (для статуса failed). null — ошибок не было. */
+    val aiError: String? = null,
 )
 
 /** Ручки записей — все под токеном и в контексте своего пользователя (call.userId()). */
@@ -78,15 +80,15 @@ fun Route.entryRoutes() = authenticate("auth-jwt") {
             return@post
         }
         val saved = EntryRepository.create(call.userId(), body)
-        val entryUuid = UUID.fromString(saved.id)
         val projUuid = body.projectId?.let(UUID::fromString)
-        if (ProjectRepository.isAiEnabled(call.userId(), projUuid)) {
-            // Поставить запись в очередь на обработку ИИ (в фоне; без ключа Groq — просто пропустится).
-            AiProcessor.schedule(call.userId(), entryUuid, saved.rawText)
-        } else {
+        if (!ProjectRepository.isAiEnabled(call.userId(), projUuid)) {
             // Проект с выключенным ИИ (конфиденциально) — в Groq не отправляем, помечаем черновиком.
-            EntryRepository.setStatus(call.userId(), entryUuid, "draft")
+            EntryRepository.setStatus(call.userId(), UUID.fromString(saved.id), "draft")
+            call.respond(saved.copy(status = "draft"))
+            return@post
         }
+        // Иначе запись остаётся в статусе queued: её подберёт AiWorker (очередь живёт в базе,
+        // поэтому обработка не потеряется, даже если сервер прямо сейчас перезапустят).
         call.respond(saved)
     }
 
@@ -122,8 +124,8 @@ fun Route.entryRoutes() = authenticate("auth-jwt") {
             call.respond(HttpStatusCode.Accepted)
             return@post
         }
-        EntryRepository.setStatus(call.userId(), id, "queued")
-        AiProcessor.schedule(call.userId(), id, entry.rawText)
+        // Обнуляем счётчик попыток и ошибку — воркер возьмёт запись как новую.
+        EntryRepository.requeueForAi(call.userId(), id)
         call.respond(HttpStatusCode.Accepted)
     }
 }

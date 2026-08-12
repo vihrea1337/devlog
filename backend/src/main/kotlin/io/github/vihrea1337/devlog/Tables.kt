@@ -49,11 +49,19 @@ object Entries : Table("entries") {
     val timeSpentMin = integer("time_spent_min").nullable()
     val createdAt = timestamp("created_at")
     val updatedAt = timestamp("updated_at")                // для синхронизации клиентов
+
+    // --- Очередь обработки ИИ (её ведёт AiWorker) ---
+    val aiAttempts = integer("ai_attempts").default(0)     // сколько раз пытались обработать
+    val aiError = text("ai_error").nullable()              // текст последней ошибки (почему failed)
+    val aiStartedAt = timestamp("ai_started_at").nullable() // когда взяли в работу (ловим зависшие)
+
     override val primaryKey = PrimaryKey(id)
 
     init {
         // Индекс под ленту и сборку отчёта за период: выбираем записи пользователя по дате.
         index(false, userId, occurredOn)
+        // Индекс под запрос воркера: «дай записи, ждущие обработки».
+        index(false, status)
     }
 }
 

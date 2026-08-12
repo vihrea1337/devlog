@@ -55,8 +55,13 @@ _Позже (Фаза 4): `plan`, `ai_quota_used` для тарифов и ли�
 | source_ref | varchar(500), NULL | ссылка на коммит/URL источника |
 | status | varchar(20) | `draft` \| `queued` \| `processing` \| `structured` \| `failed` |
 | time_spent_min | int, NULL | потрачено минут (опционально) |
-| created_at | timestamptz | |
-| updated_at | timestamptz | для синхронизации |
+| created_at | timestamp | |
+| updated_at | timestamp | для синхронизации |
+| ai_attempts | int, default 0 | сколько раз пытались обработать (стоп после 3) |
+| ai_error | text, NULL | почему не вышло — показывается пользователю |
+| ai_started_at | timestamp, NULL | когда взяли в работу; ловит зависшие в `processing` |
+
+_Последние три колонки — очередь обработки ИИ (`AiWorker`), см. `architecture.md`._
 
 ## entry_structured — что ИИ извлёк (1:1 к entries)
 | колонка | тип | заметки |

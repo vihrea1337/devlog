@@ -26,8 +26,17 @@ import kotlinx.serialization.Serializable
  * (пригодится в Docker: внутри контейнера надо слушать 0.0.0.0).
  */
 fun main() {
-    // Подключиться к базе и создать таблицы (если их ещё нет) ДО старта сервера.
+    // Подключиться к базе и накатить миграции схемы ДО старта сервера.
     configureDatabase()
+
+    // Фоновый воркер обработки записей ИИ. Очередь лежит в базе, поэтому при старте он
+    // подхватит и то, что накопилось в очереди, и то, что оборвалось на прошлом запуске.
+    if (AiProcessor.enabled) {
+        AiWorker(AiProcessor).start()
+    } else {
+        println("Воркер ИИ не запущен: нет ключа GROQ_API_KEY — записи останутся в очереди.")
+    }
+
     val port = System.getenv("PORT")?.toIntOrNull() ?: 8080
     val host = System.getenv("HOST") ?: "127.0.0.1"
     embeddedServer(Netty, port = port, host = host) {
