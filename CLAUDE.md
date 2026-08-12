@@ -18,6 +18,9 @@
 
 ## Стек (зафиксирован)
 - **Бэкенд:** Kotlin + Ktor + PostgreSQL + Exposed + HikariCP.
+- **Схема БД:** миграции Flyway (`backend/src/main/resources/db/migration/V…__.sql`).
+  Новая колонка = правка `Tables.kt` **и** новый файл миграции; совпадение стережёт
+  тест `SchemaMigrationTest`. Подробности — `docs/data-model.md`.
 - **ИИ:** Groq (OpenAI-совместимый API, бесплатно), модель `openai/gpt-oss-20b`. Ключ только
   на сервере (`backend/secrets.properties` → `groq.api.key`, в .gitignore), обработка в фоне.
   _(Изначально планировался Claude API — заменён на Groq ради бесплатности на старте.)_

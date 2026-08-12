@@ -49,6 +49,13 @@ dependencies {
     implementation("org.postgresql:postgresql:42.7.4")
     // HikariCP — пул соединений: держит готовые подключения к БД и переиспользует их.
     implementation("com.zaxxer:HikariCP:6.2.1")
+    // Flyway — миграции схемы: SQL-файлы в resources/db/migration применяются по порядку,
+    // применённые версии Flyway помнит в таблице flyway_schema_history. Без него добавить
+    // колонку в уже существующую боевую базу нечем (SchemaUtils умеет только создавать таблицы).
+    val flywayVersion = "11.1.0"
+    implementation("org.flywaydb:flyway-core:$flywayVersion")
+    // В Flyway 10+ поддержка каждой СУБД вынесена в отдельный модуль.
+    implementation("org.flywaydb:flyway-database-postgresql:$flywayVersion")
 
     // --- Авторизация ---
     // JWT (JSON Web Token): выдаём токен при входе и проверяем его на защищённых ручках.

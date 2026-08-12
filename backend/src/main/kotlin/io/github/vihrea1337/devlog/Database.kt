@@ -2,17 +2,21 @@ package io.github.vihrea1337.devlog
 
 import com.zaxxer.hikari.HikariConfig
 import com.zaxxer.hikari.HikariDataSource
+import org.flywaydb.core.Flyway
 import org.jetbrains.exposed.sql.Database
-import org.jetbrains.exposed.sql.SchemaUtils
-import org.jetbrains.exposed.sql.transactions.transaction
+import javax.sql.DataSource
 
 /**
- * Подключение к PostgreSQL и создание таблиц.
+ * Подключение к PostgreSQL и приведение схемы к актуальной версии.
  *
  * Настройки берутся из переменных окружения (для прода/Docker), а по умолчанию —
  * локальная база: порт 5433 (чтобы не конфликтовать с expenses-pg на 5432), БД "devlog".
  * HikariCP держит пул готовых подключений (открывать новое на каждый запрос дорого).
- * SchemaUtils.create = CREATE TABLE IF NOT EXISTS — создаёт таблицы, если их ещё нет.
+ *
+ * Схему ведёт **Flyway** (см. migrateSchema ниже), а НЕ SchemaUtils.create, как было раньше:
+ * SchemaUtils умеет только создавать отсутствующие таблицы и молча проходит мимо таблицы,
+ * в которой не хватает колонки. То есть на боевой базе новая колонка не появилась бы никогда,
+ * и сервер падал бы на запросах к ней.
  */
 fun configureDatabase() {
     val config = HikariConfig().apply {
@@ -22,9 +26,30 @@ fun configureDatabase() {
         password = System.getenv("DB_PASSWORD") ?: "dev"
         maximumPoolSize = 5
     }
-    Database.connect(HikariDataSource(config))
+    val dataSource = HikariDataSource(config)
+    migrateSchema(dataSource)
+    Database.connect(dataSource)
+}
 
-    transaction {
-        SchemaUtils.create(Users, Projects, Entries, EntryStructured, Reports)
-    }
+/**
+ * Накатить миграции из resources/db/migration (файлы вида `V2__описание.sql`, по возрастанию версии).
+ * Какие версии уже применены, Flyway хранит в служебной таблице `flyway_schema_history` в самой базе,
+ * поэтому повторный запуск сервера ничего не выполняет заново.
+ *
+ * `baselineOnMigrate` — про боевую базу, где таблицы уже созданы старым способом (Exposed).
+ * Увидев непустую схему без истории миграций, Flyway отметит V1 как уже применённую (не выполняя её)
+ * и накатит только V2 и дальше. На пустой базе (локально, новый сервер) выполнятся все миграции с V1.
+ */
+fun migrateSchema(dataSource: DataSource) {
+    val result = Flyway.configure()
+        .dataSource(dataSource)
+        .locations("classpath:db/migration")
+        .baselineOnMigrate(true)
+        .baselineVersion("1")
+        .load()
+        .migrate()
+    println(
+        if (result.migrationsExecuted == 0) "Схема БД актуальна (версия ${result.targetSchemaVersion ?: "1"})."
+        else "Применено миграций: ${result.migrationsExecuted}, схема БД версии ${result.targetSchemaVersion}.",
+    )
 }
