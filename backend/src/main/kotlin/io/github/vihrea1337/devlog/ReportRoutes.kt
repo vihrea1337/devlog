@@ -12,47 +12,11 @@ import io.ktor.server.routing.delete
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.put
-import kotlinx.serialization.Serializable
 import java.util.UUID
 
-// --- DTO отчётов ---
-
-@Serializable
-data class NewReport(
-    val periodStart: String,      // "2026-07-01"
-    val periodEnd: String,        // "2026-07-31"
-    val projectId: String? = null,
-    val title: String? = null,
-    val format: String = "markdown",
-)
-
-@Serializable
-data class ReportDto(
-    val id: String,
-    val projectId: String?,
-    val title: String,
-    val periodStart: String,
-    val periodEnd: String,
-    val format: String,
-    val contentMd: String,
-    val shareToken: String?,
-    val createdAt: String,
-    /**
-     * Тот же отчёт, но уже в HTML — чтобы клиент показывал человеческий документ,
-     * а не исходник Markdown со звёздочками. Рендерим тем же кодом, что и публичную
-     * страницу `/r/{token}`, а не дублируем конвертер на JavaScript.
-     * (Значение по умолчанию считается от contentMd — писать его руками не нужно.)
-     */
-    val contentHtml: String = Markdown.toHtml(contentMd),
-)
-
-/** Тело PUT /api/reports/{id}: правка отчёта перед отправкой работодателю. */
-@Serializable
-data class UpdateReport(val contentMd: String, val title: String? = null)
-
-/** Ответ на «поделиться»: токен и относительная ссылка публичной страницы. */
-@Serializable
-data class ShareResponse(val shareToken: String, val url: String)
+// DTO отчётов (NewReport, ReportDto, UpdateReport, ShareResponse) переехали
+// в общий модуль `shared` — тот же пакет, поэтому импорт не нужен. Так одно
+// определение контракта видят и сервер, и Android-приложение.
 
 fun Route.reportRoutes() {
     authenticate("auth-jwt") {

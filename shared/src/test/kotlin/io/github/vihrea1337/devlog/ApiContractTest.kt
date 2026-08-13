@@ -78,6 +78,47 @@ class ApiContractTest {
     }
 
     @Test
+    fun `имена полей отчёта не менялись`() {
+        val report = ReportDto(
+            id = "r1",
+            projectId = null,
+            title = "Отчёт за июль",
+            periodStart = "2026-07-01",
+            periodEnd = "2026-07-31",
+            format = "markdown",
+            contentMd = "# Отчёт",
+            shareToken = "abc",
+            createdAt = "2026-08-01T10:00:00Z",
+            contentHtml = "<h1>Отчёт</h1>",
+        )
+
+        val text = jsonWithDefaults.encodeToString(ReportDto.serializer(), report)
+
+        for (field in listOf(
+            "\"id\"", "\"projectId\"", "\"title\"", "\"periodStart\"", "\"periodEnd\"",
+            "\"format\"", "\"contentMd\"", "\"shareToken\"", "\"createdAt\"", "\"contentHtml\"",
+        )) {
+            assertTrue(text.contains(field), "поле $field пропало из JSON: $text")
+        }
+    }
+
+    @Test
+    fun `отчёт без публичной ссылки и без HTML разбирается`() {
+        // Сервер не обязан присылать contentHtml (например, старая версия) —
+        // приложение должно разобрать ответ, а не упасть.
+        val fromServer = """
+            {"id":"r1","title":"Отчёт","periodStart":"2026-07-01","periodEnd":"2026-07-31",
+             "format":"markdown","contentMd":"# Отчёт","createdAt":"2026-08-01T10:00:00Z"}
+        """.trimIndent()
+
+        val report = json.decodeFromString(ReportDto.serializer(), fromServer)
+
+        assertNull(report.shareToken)
+        assertNull(report.projectId)
+        assertEquals("", report.contentHtml)
+    }
+
+    @Test
     fun `событие живых обновлений сериализуется как ждёт браузер`() {
         val text = jsonWithDefaults.encodeToString(EntryEvent.serializer(), EntryEvent("e1", "structured"))
         assertEquals("""{"entryId":"e1","status":"structured"}""", text)

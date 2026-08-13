@@ -38,7 +38,18 @@ object ReportRepository {
             it[Reports.contentMd] = contentMd
             it[createdAt] = now
         }
-        ReportDto(id.toString(), projectId?.toString(), title, from.toString(), to.toString(), format, contentMd, null, now.toString())
+        ReportDto(
+            id = id.toString(),
+            projectId = projectId?.toString(),
+            title = title,
+            periodStart = from.toString(),
+            periodEnd = to.toString(),
+            format = format,
+            contentMd = contentMd,
+            shareToken = null,
+            createdAt = now.toString(),
+            contentHtml = Markdown.toHtml(contentMd),
+        )
     }
 
     fun list(userId: UUID): List<ReportDto> = transaction {
@@ -83,15 +94,23 @@ object ReportRepository {
             .singleOrNull()
     }
 
-    private fun ResultRow.toDto() = ReportDto(
-        id = this[Reports.id].toString(),
-        projectId = this[Reports.projectId]?.toString(),
-        title = this[Reports.title],
-        periodStart = this[Reports.periodStart].toString(),
-        periodEnd = this[Reports.periodEnd].toString(),
-        format = this[Reports.format],
-        contentMd = this[Reports.contentMd],
-        shareToken = this[Reports.shareToken],
-        createdAt = this[Reports.createdAt].toString(),
-    )
+    /**
+     * Строка таблицы → DTO. `contentHtml` считаем здесь, а не в самом DTO: общий модуль
+     * `shared` держит только данные, конвертер Markdown живёт на сервере.
+     */
+    private fun ResultRow.toDto(): ReportDto {
+        val md = this[Reports.contentMd]
+        return ReportDto(
+            id = this[Reports.id].toString(),
+            projectId = this[Reports.projectId]?.toString(),
+            title = this[Reports.title],
+            periodStart = this[Reports.periodStart].toString(),
+            periodEnd = this[Reports.periodEnd].toString(),
+            format = this[Reports.format],
+            contentMd = md,
+            shareToken = this[Reports.shareToken],
+            createdAt = this[Reports.createdAt].toString(),
+            contentHtml = Markdown.toHtml(md),
+        )
+    }
 }

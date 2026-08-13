@@ -159,6 +159,48 @@ data class ProjectDto(
     val createdAt: String = "",
 )
 
+// --- Отчёты за период ---
+
+/** Тело POST /api/reports: за какой период и по какому проекту собрать отчёт. */
+@Serializable
+data class NewReport(
+    val periodStart: String,      // "2026-07-01"
+    val periodEnd: String,        // "2026-07-31"
+    val projectId: String? = null,
+    val title: String? = null,
+    val format: String = "markdown",
+)
+
+/** Готовый отчёт. */
+@Serializable
+data class ReportDto(
+    val id: String,
+    val projectId: String? = null,
+    val title: String,
+    val periodStart: String,
+    val periodEnd: String,
+    val format: String,
+    val contentMd: String,
+    /** Токен публичной ссылки `/r/{token}`; null — ссылка не выдана или отозвана. */
+    val shareToken: String? = null,
+    val createdAt: String,
+    /**
+     * Тот же отчёт, но уже в HTML — чтобы клиент показывал человеческий документ,
+     * а не исходник Markdown со звёздочками. Собирает его сервер тем же кодом, что
+     * и публичную страницу `/r/{token}`: конвертер Markdown живёт в одном месте,
+     * а не дублируется на JavaScript в браузере и на Kotlin в приложении.
+     */
+    val contentHtml: String = "",
+)
+
+/** Тело PUT /api/reports/{id}: правка отчёта перед отправкой работодателю. */
+@Serializable
+data class UpdateReport(val contentMd: String, val title: String? = null)
+
+/** Ответ на «поделиться»: токен и ОТНОСИТЕЛЬНАЯ ссылка публичной страницы («/r/…»). */
+@Serializable
+data class ShareResponse(val shareToken: String, val url: String)
+
 // --- Статистика активности (календарь года и серии дней) ---
 
 @Serializable

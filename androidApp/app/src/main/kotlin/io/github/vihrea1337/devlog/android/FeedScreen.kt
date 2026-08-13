@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -36,33 +35,18 @@ import io.github.vihrea1337.devlog.ProjectDto
 import java.time.LocalDate
 
 /**
- * Главный экран: форма добавления записи + лента по дням со статусом обработки ИИ
+ * Вкладка «Лента»: форма добавления записи + лента по дням со статусом обработки ИИ
  * и разобранной структурой (если ИИ уже отработал).
+ *
+ * Шапка приложения и переключатель вкладок — снаружи, в [MainActivity].
  */
 @Composable
-fun FeedScreen(onLogout: () -> Unit, vm: FeedViewModel = viewModel()) {
+fun FeedScreen(vm: FeedViewModel = viewModel()) {
     val state by vm.state.collectAsState()
     var rawText by remember { mutableStateOf("") }
     var occurredOn by remember { mutableStateOf(LocalDate.now().toString()) }
 
-    Column(
-        Modifier
-            .fillMaxSize()
-            .systemBarsPadding()
-            .padding(16.dp),
-    ) {
-        // --- Шапка ---
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text("DevLog", style = MaterialTheme.typography.headlineSmall)
-                TokenStore.userName?.let {
-                    Text(it, style = MaterialTheme.typography.bodySmall)
-                }
-            }
-            TextButton(onClick = onLogout) { Text("Выйти") }
-        }
-        Spacer(Modifier.height(12.dp))
-
+    Column(Modifier.fillMaxSize()) {
         // --- Форма новой записи ---
         OutlinedTextField(
             value = occurredOn,
