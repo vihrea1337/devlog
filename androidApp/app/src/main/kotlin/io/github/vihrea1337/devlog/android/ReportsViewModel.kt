@@ -2,9 +2,11 @@ package io.github.vihrea1337.devlog.android
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import io.github.vihrea1337.devlog.ErrorResponse
 import io.github.vihrea1337.devlog.NewReport
 import io.github.vihrea1337.devlog.ProjectDto
 import io.github.vihrea1337.devlog.ReportDto
+import io.github.vihrea1337.devlog.UpdateReport
 import io.github.vihrea1337.devlog.android.data.ApiClient
 import java.time.LocalDate
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -12,6 +14,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.Json
 
 /** Готовые варианты периода — чтобы не набирать даты руками на телефоне. */
 enum class PeriodPreset(val label: String) {
@@ -57,6 +60,12 @@ data class ReportsUiState(
     val opened: ReportDto? = null,
     /** Полный адрес публичной ссылки открытого отчёта; null — ссылка не выдана. */
     val shareUrl: String? = null,
+    /** Открытый отчёт правится: вместо готового документа показываем поля ввода. */
+    val isEditing: Boolean = false,
+    /** Черновик правки. Живёт в ViewModel, поэтому переживает поворот экрана. */
+    val draftTitle: String = "",
+    val draftMd: String = "",
+    val isSaving: Boolean = false,
 ) {
     fun projectOf(id: String?): ProjectDto? = id?.let { projectId -> projects.find { it.id == projectId } }
 }
@@ -161,8 +170,65 @@ class ReportsViewModel : ViewModel() {
         }
     }
 
-    /** Вернуться из просмотра к списку. */
-    fun closeOpened() = _state.update { it.copy(opened = null, shareUrl = null) }
+    /** Вернуться из просмотра к списку (незаконченная правка при этом отбрасывается). */
+    fun closeOpened() = _state.update {
+        it.copy(opened = null, shareUrl = null, isEditing = false, draftTitle = "", draftMd = "")
+    }
+
+    // --- Правка отчёта перед отправкой работодателю ---
+
+    /**
+     * Включить режим правки: черновик заполняем текущим текстом отчёта.
+     * Правим Markdown, а не HTML: HTML сервер соберёт заново сам — так же,
+     * как для публичной страницы.
+     */
+    fun startEdit() = _state.update { s ->
+        val report = s.opened ?: return@update s
+        s.copy(isEditing = true, draftTitle = report.title, draftMd = report.contentMd, error = null)
+    }
+
+    fun setDraftTitle(value: String) = _state.update { it.copy(draftTitle = value) }
+
+    fun setDraftMd(value: String) = _state.update { it.copy(draftMd = value) }
+
+    /** Выйти из правки, ничего не сохраняя. */
+    fun cancelEdit() = _state.update {
+        it.copy(isEditing = false, draftTitle = "", draftMd = "", error = null)
+    }
+
+    /** Сохранить правку на сервере; в ответ приходит отчёт с уже пересобранным HTML. */
+    fun saveEdit() {
+        val s = _state.value
+        val report = s.opened ?: return
+        val text = s.draftMd.trim()
+        val title = s.draftTitle.trim()
+        if (text.isEmpty()) {
+            _state.update { it.copy(error = "Текст отчёта пуст") }
+            return
+        }
+        if (title.isEmpty()) {
+            _state.update { it.copy(error = "Заголовок пуст") }
+            return
+        }
+        viewModelScope.launch {
+            _state.update { it.copy(isSaving = true, error = null) }
+            try {
+                val updated = ApiClient.api.updateReport(report.id, UpdateReport(contentMd = text, title = title))
+                _state.update { state ->
+                    state.copy(
+                        isSaving = false,
+                        isEditing = false,
+                        draftTitle = "",
+                        draftMd = "",
+                        opened = updated,
+                        reports = state.reports.map { if (it.id == updated.id) updated else it },
+                    )
+                }
+            } catch (e: Exception) {
+                _state.update { it.copy(isSaving = false, error = e.humanMessage()) }
+            }
+        }
+    }
 
     /**
      * Включить публичную ссылку. Сервер отдаёт относительный путь («/r/abc»),
@@ -237,10 +303,25 @@ class ReportsViewModel : ViewModel() {
 /**
  * Сообщение об ошибке человеческим языком. Retrofit на ответ 4xx/5xx бросает
  * HttpException с текстом вида «HTTP 400 Bad Request» — сам по себе он ничего
- * не объясняет, но хотя бы код показать полезно.
+ * не объясняет. Но сервер кладёт причину в тело ответа (`{"error": "…"}`),
+ * поэтому сначала пробуем достать её оттуда.
  */
 private fun Exception.humanMessage(): String = when (this) {
     is java.net.SocketTimeoutException -> "Сервер долго не отвечает — попробуйте ещё раз"
     is java.io.IOException -> "Нет связи с сервером"
+    is retrofit2.HttpException -> serverError() ?: message ?: "Ошибка сервера"
     else -> message ?: "Неизвестная ошибка"
 }
+
+/**
+ * Текст ошибки из тела ответа. `errorBody()` читается один раз и может быть чем
+ * угодно (например, HTML от прокси), поэтому всё в runCatching: не смогли
+ * разобрать — вернём null, и наверху останется код HTTP.
+ */
+private fun retrofit2.HttpException.serverError(): String? = runCatching {
+    val body = response()?.errorBody()?.string().orEmpty()
+    errorJson.decodeFromString(ErrorResponse.serializer(), body).error.ifBlank { null }
+}.getOrNull()
+
+/** Один разборщик на всё приложение: создавать Json на каждую ошибку дорого. */
+private val errorJson = Json { ignoreUnknownKeys = true }

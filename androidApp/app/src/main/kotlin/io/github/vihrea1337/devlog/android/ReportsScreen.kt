@@ -12,6 +12,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
@@ -30,12 +31,17 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SelectableDates
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -51,6 +57,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.vihrea1337.devlog.ReportDto
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneOffset
 
 /**
  * Экран отчётов. Два состояния: список собранных отчётов с формой «собрать за период»
@@ -61,13 +70,16 @@ fun ReportsScreen(vm: ReportsViewModel = viewModel()) {
     val state by vm.state.collectAsState()
 
     // Системная кнопка «назад» из просмотра возвращает к списку, а не закрывает приложение.
-    BackHandler(enabled = state.opened != null) { vm.closeOpened() }
+    // Из правки она сначала выходит в просмотр — иначе один промах стирал бы весь черновик.
+    BackHandler(enabled = state.opened != null) {
+        if (state.isEditing) vm.cancelEdit() else vm.closeOpened()
+    }
 
     val opened = state.opened
     if (opened == null) {
         ReportsList(state, vm)
     } else {
-        ReportDetail(opened, state.shareUrl, state.error, vm)
+        ReportDetail(state, opened, vm)
     }
 }
 
@@ -91,19 +103,19 @@ private fun ReportsList(state: ReportsUiState, vm: ReportsViewModel) {
         }
         Spacer(Modifier.height(8.dp))
 
+        // Даты выбираются календарём: на телефоне набирать «2026-08-14» руками мучительно,
+        // да и опечатку вроде «2026-13-01» календарь исключает по устройству.
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(
-                value = state.periodStart,
-                onValueChange = vm::setPeriodStart,
-                label = { Text("С") },
-                singleLine = true,
+            DateField(
+                label = "С",
+                isoDate = state.periodStart,
+                onPick = vm::setPeriodStart,
                 modifier = Modifier.weight(1f),
             )
-            OutlinedTextField(
-                value = state.periodEnd,
-                onValueChange = vm::setPeriodEnd,
-                label = { Text("По") },
-                singleLine = true,
+            DateField(
+                label = "По",
+                isoDate = state.periodEnd,
+                onPick = vm::setPeriodEnd,
                 modifier = Modifier.weight(1f),
             )
         }
@@ -187,6 +199,79 @@ private fun ReportsList(state: ReportsUiState, vm: ReportsViewModel) {
     }
 }
 
+/**
+ * Поле даты: показывает выбранное человеческим форматом, по нажатию открывает календарь.
+ *
+ * Календарь Material3 работает в миллисекундах UTC-полуночи. Переводить их в местную
+ * зону нельзя: восточнее Лондона дата съедет на день назад — ровно та ловушка, на
+ * которой мы уже обожглись в вебе с `toISOString()`.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DateField(
+    label: String,
+    isoDate: String,
+    onPick: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var showPicker by remember { mutableStateOf(false) }
+    val parsed = remember(isoDate) { runCatching { LocalDate.parse(isoDate.trim()) }.getOrNull() }
+
+    Box(modifier) {
+        OutlinedTextField(
+            value = parsed?.let { humanDate(it.toString()) } ?: isoDate,
+            onValueChange = {},
+            readOnly = true,
+            label = { Text(label) },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        // Поле с readOnly само по себе нажатие не ловит, а клавиатура нам не нужна:
+        // прозрачная «крышка» поверх поля открывает календарь.
+        Box(
+            Modifier
+                .matchParentSize()
+                .clickable { showPicker = true },
+        )
+    }
+
+    if (showPicker) {
+        val pickerState = rememberDatePickerState(
+            initialSelectedDateMillis = (parsed ?: LocalDate.now()).toEpochDay() * MILLIS_IN_DAY,
+            selectableDates = NotInFuture,
+        )
+        DatePickerDialog(
+            onDismissRequest = { showPicker = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    pickerState.selectedDateMillis?.let { onPick(isoFromUtcMillis(it)) }
+                    showPicker = false
+                }) { Text("Выбрать") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showPicker = false }) { Text("Отмена") }
+            },
+        ) {
+            DatePicker(state = pickerState)
+        }
+    }
+}
+
+private const val MILLIS_IN_DAY = 86_400_000L
+
+/** Дневник о прошлой работе: будущие даты в отчёте бессмысленны, календарь их не даёт. */
+@OptIn(ExperimentalMaterial3Api::class)
+private object NotInFuture : SelectableDates {
+    override fun isSelectableDate(utcTimeMillis: Long): Boolean =
+        utcTimeMillis <= LocalDate.now().toEpochDay() * MILLIS_IN_DAY
+
+    override fun isSelectableYear(year: Int): Boolean = year <= LocalDate.now().year
+}
+
+/** Миллисекунды UTC-полуночи из календаря → «ГГГГ-ММ-ДД» для сервера. */
+private fun isoFromUtcMillis(millis: Long): String =
+    Instant.ofEpochMilli(millis).atZone(ZoneOffset.UTC).toLocalDate().toString()
+
 /** Строка списка: название, период, дата сборки и метка открытой публичной ссылки. */
 @Composable
 private fun ReportRow(report: ReportDto, projectName: String?, onClick: () -> Unit) {
@@ -225,8 +310,10 @@ private fun ReportRow(report: ReportDto, projectName: String?, onClick: () -> Un
 // --- Просмотр одного отчёта ---
 
 @Composable
-private fun ReportDetail(report: ReportDto, shareUrl: String?, error: String?, vm: ReportsViewModel) {
+private fun ReportDetail(state: ReportsUiState, report: ReportDto, vm: ReportsViewModel) {
     val context = LocalContext.current
+    val shareUrl = state.shareUrl
+    val error = state.error
     var confirmDelete by remember { mutableStateOf(false) }
 
     /** Положить текст отчёта в буфер обмена — вставить в письмо или чат вручную. */
@@ -250,9 +337,13 @@ private fun ReportDetail(report: ReportDto, shareUrl: String?, error: String?, v
 
     Column(Modifier.fillMaxSize()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = { vm.closeOpened() }) { Text("← К списку") }
+            TextButton(onClick = { if (state.isEditing) vm.cancelEdit() else vm.closeOpened() }) {
+                Text(if (state.isEditing) "← Отменить правку" else "← К списку")
+            }
         }
-        Text(report.title, style = MaterialTheme.typography.titleMedium)
+        if (!state.isEditing) {
+            Text(report.title, style = MaterialTheme.typography.titleMedium)
+        }
         Text(
             "${humanDate(report.periodStart)} — ${humanDate(report.periodEnd)}",
             style = MaterialTheme.typography.bodySmall,
@@ -271,33 +362,38 @@ private fun ReportDetail(report: ReportDto, shareUrl: String?, error: String?, v
         }
         Spacer(Modifier.height(8.dp))
 
-        // Сам отчёт: сервер уже прислал его в HTML (тот же, что на публичной странице),
-        // поэтому показываем документ как есть, а не разбираем Markdown ещё раз.
-        ReportHtml(
-            html = report.contentHtml.ifBlank { "<pre>${report.contentMd}</pre>" },
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f),
-        )
+        if (state.isEditing) {
+            ReportEditor(state, vm, Modifier.weight(1f))
+        } else {
+            // Сам отчёт: сервер уже прислал его в HTML (тот же, что на публичной странице),
+            // поэтому показываем документ как есть, а не разбираем Markdown ещё раз.
+            ReportHtml(
+                html = report.contentHtml.ifBlank { "<pre>${report.contentMd}</pre>" },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+            )
 
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = {
-                if (shareUrl != null) {
-                    shareText("${report.title}\n$shareUrl")
-                } else {
-                    // Ссылки ещё нет — сервер выдаст её и вернёт адрес, тогда и делимся.
-                    vm.share { url -> shareText("${report.title}\n$url") }
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = {
+                    if (shareUrl != null) {
+                        shareText("${report.title}\n$shareUrl")
+                    } else {
+                        // Ссылки ещё нет — сервер выдаст её и вернёт адрес, тогда и делимся.
+                        vm.share { url -> shareText("${report.title}\n$url") }
+                    }
+                }) {
+                    Text(if (shareUrl != null) "Поделиться ссылкой" else "Открыть ссылку и отправить")
                 }
-            }) {
-                Text(if (shareUrl != null) "Поделиться ссылкой" else "Открыть ссылку и отправить")
+                OutlinedButton(onClick = { vm.startEdit() }) { Text("Редактировать") }
+                OutlinedButton(onClick = { copyToClipboard(report.contentMd) }) {
+                    Text("Скопировать текст")
+                }
+                if (shareUrl != null) {
+                    TextButton(onClick = { vm.unshare() }) { Text("Отозвать ссылку") }
+                }
+                TextButton(onClick = { confirmDelete = true }) { Text("Удалить") }
             }
-            OutlinedButton(onClick = { copyToClipboard(report.contentMd) }) {
-                Text("Скопировать текст")
-            }
-            if (shareUrl != null) {
-                TextButton(onClick = { vm.unshare() }) { Text("Отозвать ссылку") }
-            }
-            TextButton(onClick = { confirmDelete = true }) { Text("Удалить") }
         }
         Spacer(Modifier.height(8.dp))
     }
@@ -318,6 +414,60 @@ private fun ReportDetail(report: ReportDto, shareUrl: String?, error: String?, v
                 TextButton(onClick = { confirmDelete = false }) { Text("Отмена") }
             },
         )
+    }
+}
+
+/**
+ * Редактор отчёта. ИИ пишет черновик, но формулировки под конкретного работодателя
+ * человек доводит сам — раньше это можно было сделать только в вебе.
+ *
+ * Правим Markdown, а не показанный HTML: HTML сервер пересоберёт из текста сам,
+ * тем же кодом, что и для публичной страницы.
+ */
+@Composable
+private fun ReportEditor(state: ReportsUiState, vm: ReportsViewModel, modifier: Modifier = Modifier) {
+    Column(modifier) {
+        OutlinedTextField(
+            value = state.draftTitle,
+            onValueChange = vm::setDraftTitle,
+            label = { Text("Заголовок") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Spacer(Modifier.height(8.dp))
+        OutlinedTextField(
+            value = state.draftMd,
+            onValueChange = vm::setDraftMd,
+            label = { Text("Текст отчёта (Markdown)") },
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
+        )
+        Spacer(Modifier.height(8.dp))
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Button(onClick = { vm.saveEdit() }, enabled = !state.isSaving) {
+                if (state.isSaving) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.onPrimary,
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text("Сохраняю…")
+                } else {
+                    Text("Сохранить")
+                }
+            }
+            TextButton(onClick = { vm.cancelEdit() }, enabled = !state.isSaving) { Text("Отмена") }
+            Text(
+                "${state.draftMd.length} символов",
+                style = MaterialTheme.typography.labelSmall,
+                color = Color(0xFF6B7382),
+            )
+        }
     }
 }
 
