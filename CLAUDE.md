@@ -55,18 +55,30 @@
 **Тесты:** 96 в `backend/` + 6 контрактных в `shared/`. CI зелёный.
 
 **НЕ развёрнуто в проде** (написано после последнего деплоя): импорт GitHub (миграция V4),
-Android с проектами и отчётами, общий модуль `shared/`. При следующем деплое накатится V4.
+Android с проектами и отчётами, общий модуль `shared/`, офлайн-кэш ленты (Ktor Client +
+SQLDelight). При следующем деплое накатится V4.
 
 **НЕ проверено вживую:** импорт реальных коммитов; APK на телефоне (ни разу) — в том числе
-вкладка отчётов, правка отчёта и календарь дат; вёрстка панели GitHub (скриншот превью
-снять не успели).
+вкладка отчётов, правка отчёта, календарь дат и новый офлайн-кэш ленты; вёрстка панели
+GitHub (скриншот превью снять не успели).
+
+## Что сделано без участия пользователя (2026-09-02)
+Офлайн-кэш ленты в Android поверх готового `since`-протокола (пункт 2 из плана ниже):
+в `shared/` появились Ktor Client (движок CIO) и SQLDelight (`db/Entries.sq`), 
+`EntryRepository` в `sync/` тянет изменения с `/api/entries/changes` и кладёт их в
+локальную базу, `FeedViewModel` в androidApp теперь читает ленту из кэша (работает
+без сети), а не гоняет Retrofit при каждом открытии экрана. Подробности и что
+осталось (офлайн-**запись** не сделана) — в `docs/roadmap.md`, Фаза 3.7.
+Прогнано: `./gradlew :shared:test` (контракт + новый `EntryRepositorySyncTest`) и
+`androidApp assembleDebug` — оба зелёные. **На реальном телефоне не проверялось.**
+Изменения только закоммичены локально, **не задеплоены и не запушены**.
 
 ## Что делать дальше (по согласованному плану)
 1. Поднять окружение и задеплоить накопленное; проверить импорт коммитов под логином
    `vihrea1337` (приватный `devlog` в публичной активности не виден — только открытые репо).
-   Тогда же — первый живой прогон APK на телефоне (лента + отчёты).
-2. Офлайн-кэш в Android поверх готового `since`-протокола: в `shared/` переедут
-   Ktor Client и SQLDelight.
+   Тогда же — первый живой прогон APK на телефоне (лента + отчёты + офлайн-кэш).
+2. ~~Офлайн-кэш в Android поверх готового `since`-протокола~~ — сделано 2026-09-02
+   (чтение из кэша), см. выше. Офлайн-**запись** осталась на будущее.
 3. Импорт выгрузок из чатов; приватные репозитории GitHub (нужен токен и хранилище секретов).
 4. ~~Мелочи по Android: правка текста отчёта, выбор дат календарём~~ — сделано 14.08,
    ждёт живой проверки на телефоне.
@@ -84,10 +96,15 @@ Android с проектами и отчётами, общий модуль `shar
   версии в `caddy/Dockerfile` закреплены намеренно (Caddy 2.10 + duckdns v0.5.0).
 
 ## Команды сборки/запуска
-- **Сборка/тесты:** `JAVA_HOME=C:\Program Files\Android\Android Studio\jbr`,
-  из `backend/`: `./gradlew test` / `distTar` / `run`; тесты общего модуля — `./gradlew :shared:test`.
+- **JDK:** `JAVA_HOME=C:\Program Files\Eclipse Adoptium\jdk-21.0.12.101-hotspot` (Temurin 21).
+  _Не JBR Android Studio:_ начиная с Android Studio 2026 её JBR — версия 25, а Gradle 8.14.3 +
+  AGP 8.13.2 в этом проекте с JDK 25 не собираются (`Could not determine java version from
+  '25.0.3'`). Уже настроено как переменная окружения пользователя на этой машине.
+- **Сборка/тесты:** из `backend/`: `./gradlew test` / `distTar` / `run`; тесты общего модуля —
+  `./gradlew :shared:test`.
 - **Локальный запуск вживую:** поднять Docker Desktop → `docker compose -f backend/docker-compose.yml up -d`
-  (Postgres `devlog-pg` на порту 5433) → `./gradlew -p backend run` → http://localhost:8080.
-- **Android:** из `androidApp/` c `JAVA_HOME=...jbr`, `.\gradlew.bat :app:assembleDebug`
+  (Postgres `devlog-pg` на порту 5433) → `PORT=<свободный порт, 8080 может быть занят другим
+  проектом> ./gradlew -p backend run` → http://localhost:PORT.
+- **Android:** из `androidApp/`, `.\gradlew.bat :app:assembleDebug`
   (→ `app/build/outputs/apk/debug/app-debug.apk`). Адрес API — в `data/DevLogApi.kt` (`BASE_URL`).
   SDK берётся из `androidApp/local.properties` (`sdk.dir`, в .gitignore).
