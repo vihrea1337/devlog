@@ -1,22 +1,31 @@
 package io.github.vihrea1337.devlog.sync
 
 import io.github.vihrea1337.devlog.EntryChangesDto
+import io.github.vihrea1337.devlog.EntryDto
+import io.github.vihrea1337.devlog.NewEntry
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.engine.HttpClientEngine
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.client.request.delete
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.parameter
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
+import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpStatusCode
+import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.json.Json
 
 /**
- * Тонкий клиент только для синхронизации записей (GET /api/entries/changes).
- * Остальные операции (вход, добавление, удаление записи) по-прежнему идут через
- * Retrofit в androidApp — переводить их сюда не требовалось этой задачей.
+ * Клиент для синхронизации записей: чтение изменений (since-протокол) и запись
+ * (создание/удаление) — то, что нужно офлайн-очереди в EntryRepository. Вход, отчёты,
+ * проекты и т.п. по-прежнему идут через Retrofit в androidApp — переводить их сюда
+ * не требовалось этой задачей.
  *
  * engine передаётся параметром ради тестов (io.ktor:ktor-client-mock подменяет сеть);
  * в реальном приложении и в проде используется CIO — тот же движок, что и на бэкенде.
@@ -44,6 +53,36 @@ class DevLogSyncClient(
             parameter("limit", limit)
             tokenProvider()?.let { header(HttpHeaders.Authorization, "Bearer $it") }
         }.body()
+    }
+
+    /**
+     * POST /api/entries. newEntry.id задан клиентом заранее — сервер идемпотентен по нему,
+     * поэтому повторный вызов после сетевого сбоя (не дошёл ответ, а не сам запрос)
+     * не создаст вторую запись, а просто вернёт ту же самую.
+     */
+    suspend fun createEntry(newEntry: NewEntry): EntryDto {
+        val base = baseUrl.trimEnd('/')
+        return http.post("$base/api/entries") {
+            contentType(ContentType.Application.Json)
+            tokenProvider()?.let { header(HttpHeaders.Authorization, "Bearer $it") }
+            setBody(newEntry)
+        }.body()
+    }
+
+    /**
+     * DELETE /api/entries/{id}. 404 (записи уже нет) считаем успехом наравне с 204 —
+     * цель операции ("этой записи на сервере быть не должно") в обоих случаях достигнута,
+     * и повторять запрос до бесконечности незачем.
+     */
+    suspend fun deleteEntry(id: String) {
+        val base = baseUrl.trimEnd('/')
+        val response = http.delete("$base/api/entries/$id") {
+            tokenProvider()?.let { header(HttpHeaders.Authorization, "Bearer $it") }
+        }
+        when (response.status) {
+            HttpStatusCode.NoContent, HttpStatusCode.NotFound -> Unit
+            else -> error("Не удалось удалить запись $id: HTTP ${response.status}")
+        }
     }
 
     fun close() = http.close()

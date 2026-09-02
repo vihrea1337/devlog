@@ -1,0 +1,41 @@
+-- Очередь исходящих изменений для офлайн-записи: пока сети нет (или она недоступна),
+-- addEntry/deleteEntry в приложении пишут сюда, а не в сеть напрямую. flushPending()
+-- в EntryRepository разбирает эту очередь при следующей синхронизации.
+
+CREATE TABLE pendingOperation (
+    -- id самой операции (не записи!) — своя случайная строка, чтобы у одной записи
+    -- в теории могло быть несколько операций подряд без конфликта первичных ключей.
+    id TEXT NOT NULL PRIMARY KEY,
+    entryId TEXT NOT NULL,
+    -- "create" | "delete". Что-то среднее вроде "update" не заводим — этой задачей
+    -- офлайн-редактирование текста записи не требовалось, только добавление/удаление.
+    type TEXT NOT NULL,
+    -- Сериализованный NewEntry для type = "create"; null для "delete" (там нечего слать, кроме id).
+    payloadJson TEXT,
+    createdAtMillis INTEGER NOT NULL,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    -- Экспоненциальная задержка: следующая попытка не раньше этого момента (epoch millis).
+    nextAttemptAtMillis INTEGER NOT NULL DEFAULT 0
+);
+
+selectDue:
+SELECT * FROM pendingOperation WHERE nextAttemptAtMillis <= :now ORDER BY createdAtMillis ASC;
+
+findByEntryAndType:
+SELECT * FROM pendingOperation WHERE entryId = :entryId AND type = :type LIMIT 1;
+
+insertOperation:
+INSERT OR REPLACE INTO pendingOperation(id, entryId, type, payloadJson, createdAtMillis, attempts, nextAttemptAtMillis)
+VALUES (:id, :entryId, :type, :payloadJson, :createdAtMillis, :attempts, :nextAttemptAtMillis);
+
+deleteOperation:
+DELETE FROM pendingOperation WHERE id = :id;
+
+markAttempt:
+UPDATE pendingOperation SET attempts = :attempts, nextAttemptAtMillis = :nextAttemptAtMillis WHERE id = :id;
+
+countPending:
+SELECT COUNT(*) FROM pendingOperation;
+
+deleteAllPending:
+DELETE FROM pendingOperation;
