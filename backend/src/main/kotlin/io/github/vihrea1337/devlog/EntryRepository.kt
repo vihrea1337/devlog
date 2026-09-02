@@ -9,6 +9,7 @@ import org.jetbrains.exposed.sql.andWhere
 import org.jetbrains.exposed.sql.deleteWhere
 import org.jetbrains.exposed.sql.insert
 import org.jetbrains.exposed.sql.lowerCase
+import org.jetbrains.exposed.sql.nextLongVal
 import org.jetbrains.exposed.sql.or
 import org.jetbrains.exposed.sql.selectAll
 import org.jetbrains.exposed.sql.update
@@ -115,6 +116,7 @@ object EntryRepository {
             it[timeSpentMin] = input.timeSpentMin
             it[createdAt] = now
             it[updatedAt] = now
+            it[syncSeq] = EntriesSyncSeq.nextLongVal()
         }
         findInTx(userId, newId)!!
     }
@@ -129,6 +131,7 @@ object EntryRepository {
                 if (patch.clearProject) it[projectId] = null
                 else if (patch.projectId != null) it[projectId] = patch.projectId
                 it[updatedAt] = Instant.now()
+                it[syncSeq] = EntriesSyncSeq.nextLongVal()
             }
             if (changed == 0) null else findInTx(userId, id)
         } ?: return null
@@ -154,42 +157,38 @@ object EntryRepository {
             it[status] = "deleted"
             it[deletedAt] = now
             it[updatedAt] = now
+            it[syncSeq] = EntriesSyncSeq.nextLongVal()
         }
         if (affected > 0) EntryStructured.deleteWhere { EntryStructured.entryId eq id }
         affected > 0
     }
 
     /**
-     * Что изменилось после момента [since] — основа синхронизации клиентов.
-     * Отдаём и обычные записи, и надгробия (у них `deleted = true`), по возрастанию
-     * `updated_at`: клиент запоминает время последней полученной записи и в следующий раз
-     * просит только то, что новее.
+     * Что изменилось после курсора [since] — основа синхронизации клиентов. Отдаём и обычные
+     * записи, и надгробия (у них `deleted = true`), по возрастанию `sync_seq`: строго
+     * монотонного счётчика записи (см. Tables.kt), а НЕ `updated_at`. `updated_at` пробовали
+     * раньше — несколько записей МОГУТ получить одинаковое значение (быстрые вставки подряд,
+     * ограниченное разрешение часов/колонки), и при строгом "greater" часть таких записей
+     * навсегда терялась бы между страницами. Добавление id как тай-брейка не спасало:
+     * порядок случайных UUID не совпадает с порядком записи, и "более новая" (в смысле
+     * реального порядка вставки) запись могла оказаться "меньше" по id и выпасть из ответа
+     * (см. историю в docs/architecture.md). sync_seq — единственный источник истины про
+     * порядок: значения из БД-последовательности НИКОГДА не повторяются и всегда растут
+     * ровно в порядке вставки/изменения строки.
      */
-    fun changesSince(userId: UUID, since: ChangesCursor?, limit: Int): List<EntryDto> {
-        val base = transaction {
+    fun changesSince(userId: UUID, since: Long?, limit: Int): ChangesPage {
+        val rows = transaction {
             val q = Entries.selectAll().where { Entries.userId eq userId }
-            if (since != null) {
-                // Составной курсор (updatedAt, id), а не просто "updatedAt > since": несколько
-                // записей МОГУТ получить одинаковый updatedAt (импорт создаёт их в цикле без
-                // задержки, а разрешение системных часов на Windows — единицы миллисекунд).
-                // Со строгим "greater" по одному updatedAt при разрезании на страницы часть
-                // записей с тем же самым updatedAt, что у последней записи прошлой страницы,
-                // навсегда пропадала бы: они не "> since" (равны), но уже не попали в прошлую
-                // страницу (обрезало лимитом). id — просто детерминированный тай-брейк,
-                // без него порядок среди "равных по времени" строк не определён и нестабилен
-                // между запусками (это и объясняло флак теста синхронизации).
-                q.andWhere {
-                    (Entries.updatedAt greater since.updatedAt) or
-                        ((Entries.updatedAt eq since.updatedAt) and (Entries.id greater since.afterId))
-                }
-            }
-            q.orderBy(Entries.updatedAt to SortOrder.ASC, Entries.id to SortOrder.ASC)
+            if (since != null) q.andWhere { Entries.syncSeq greater since }
+            q.orderBy(Entries.syncSeq to SortOrder.ASC)
                 .limit(limit)
-                .map { it.toEntryDto() }
+                .map { it.toEntryDto() to it[Entries.syncSeq] }
         }
-        if (base.isEmpty()) return base
-        val structured = EntryStructuredRepository.forEntries(base.map { UUID.fromString(it.id) })
-        return base.map { it.copy(structured = structured[UUID.fromString(it.id)]) }
+        if (rows.isEmpty()) return ChangesPage(emptyList(), lastSeq = null)
+        val entries = rows.map { it.first }
+        val structured = EntryStructuredRepository.forEntries(entries.map { UUID.fromString(it.id) })
+        val withStructured = rows.map { (entry, _) -> entry.copy(structured = structured[UUID.fromString(entry.id)]) }
+        return ChangesPage(withStructured, lastSeq = rows.last().second)
     }
 
     /** Сменить статус записи (для постановки в очередь ИИ и перезапуска обработки). */
@@ -197,6 +196,7 @@ object EntryRepository {
         Entries.update({ (Entries.id eq id) and (Entries.userId eq userId) }) {
             it[status] = newStatus
             it[updatedAt] = Instant.now()
+            it[syncSeq] = EntriesSyncSeq.nextLongVal()
         } > 0
     }
 
@@ -248,6 +248,7 @@ object EntryRepository {
                     it[aiAttempts] = c.attempts + 1
                     it[aiStartedAt] = now
                     it[updatedAt] = now
+                    it[syncSeq] = EntriesSyncSeq.nextLongVal()
                 }
                 if (claimed > 0) return@transaction AiJob(c.id, c.userId, c.rawText, c.attempts + 1)
             }
@@ -275,6 +276,7 @@ object EntryRepository {
             it[status] = "structured"
             it[aiError] = null
             it[updatedAt] = Instant.now()
+            it[syncSeq] = EntriesSyncSeq.nextLongVal()
         } > 0
     }
 
@@ -288,6 +290,7 @@ object EntryRepository {
             it[status] = if (retry) "queued" else "failed"
             it[aiError] = error.take(500)
             it[updatedAt] = Instant.now()
+            it[syncSeq] = EntriesSyncSeq.nextLongVal()
         } > 0
     }
 
@@ -298,6 +301,7 @@ object EntryRepository {
             it[aiAttempts] = (attempt - 1).coerceAtLeast(0)
             it[aiError] = error?.take(500)
             it[updatedAt] = Instant.now()
+            it[syncSeq] = EntriesSyncSeq.nextLongVal()
         } > 0
     }
 
@@ -309,6 +313,7 @@ object EntryRepository {
             it[aiError] = null
             it[aiStartedAt] = null
             it[updatedAt] = Instant.now()
+            it[syncSeq] = EntriesSyncSeq.nextLongVal()
         } > 0
     }
 
@@ -337,30 +342,5 @@ object EntryRepository {
     )
 }
 
-/**
- * Курсор синхронизации: (updatedAt, id) записи, ПОСЛЕ которой продолжать. Составной,
- * а не просто Instant — см. комментарий в [EntryRepository.changesSince] про то, почему
- * одного updatedAt недостаточно, если несколько записей могут получить одинаковое время.
- *
- * Для клиента это НЕПРОЗРАЧНАЯ строка: он получает её как `serverTime` в ответе и присылает
- * обратно как `since`, не разбирая — поэтому формат можно менять, не трогая контракт API
- * (значение всё ещё String в EntryChangesDto/запросе).
- */
-data class ChangesCursor(val updatedAt: Instant, val afterId: UUID) {
-    // "_" — гарантированно URL-safe разделитель (unreserved по RFC 3986) и не встречается
-    // ни в Instant.toString(), ни в UUID.toString(), так что парсинг однозначен.
-    override fun toString(): String = "${updatedAt}_$afterId"
-
-    companion object {
-        /** Ничего ещё не отдавали этому пользователю — стартуем с "любая запись > этого момента". */
-        val NIL_ID: UUID = UUID(0L, 0L)
-
-        fun parse(raw: String): ChangesCursor? {
-            val separator = raw.lastIndexOf('_')
-            if (separator < 0) return null
-            val instant = runCatching { Instant.parse(raw.substring(0, separator)) }.getOrNull() ?: return null
-            val id = runCatching { UUID.fromString(raw.substring(separator + 1)) }.getOrNull() ?: return null
-            return ChangesCursor(instant, id)
-        }
-    }
-}
+/** Одна страница /api/entries/changes: сами записи + sync_seq последней из них (null — пусто). */
+data class ChangesPage(val entries: List<EntryDto>, val lastSeq: Long?)

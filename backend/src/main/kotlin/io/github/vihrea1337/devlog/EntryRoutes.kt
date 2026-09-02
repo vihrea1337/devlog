@@ -49,36 +49,29 @@ fun Route.entryRoutes() = authenticate("auth-jwt") {
     }
 
     /**
-     * Синхронизация: что изменилось после момента `since` (включая удалённые записи).
-     * `since`/`serverTime` — НЕПРОЗРАЧНЫЙ курсор: клиент получает `serverTime` из ответа
-     * и присылает его же обратно как `since`, не пытаясь разобрать это как чистую дату
-     * (внутри — составной "updatedAt|id", см. [ChangesCursor]).
+     * Синхронизация: что изменилось после курсора `since` (включая удалённые записи).
+     * `since`/`serverTime` — НЕПРОЗРАЧНАЯ строка для клиента (он получает `serverTime` из
+     * ответа и присылает его же обратно как `since`, не пытаясь разобрать) — внутри это
+     * `sync_seq` (см. Tables.kt): строго монотонный счётчик записи, НЕ `updated_at`
+     * (тот мог повториться у нескольких записей — см. историю в docs/architecture.md).
      */
     get("/api/entries/changes") {
         val sinceRaw = call.request.queryParameters["since"]
         val since = sinceRaw?.takeIf { it.isNotBlank() }?.let {
-            ChangesCursor.parse(it)
+            it.toLongOrNull()
                 ?: return@get call.badRequest("Некорректный since — подставьте serverTime из предыдущего ответа как есть")
         }
         val limit = (call.request.queryParameters["limit"]?.toIntOrNull() ?: 200).coerceIn(1, 500)
-        val changes = EntryRepository.changesSince(call.userId(), since, limit)
-        // Курсор для следующего запроса — это (updatedAt, id) ПОСЛЕДНЕЙ отданной записи,
-        // а не "текущее время сервера": иначе записи, которые уже лежат в базе, но не
-        // попали в эту страницу (обрезало лимитом), были бы навсегда пропущены — следующий
-        // запрос искал бы "> сейчас", а они старше "сейчас", но новее прошлого курсора.
-        val nextCursor = when {
-            changes.isNotEmpty() -> {
-                val last = changes.last()
-                ChangesCursor(java.time.Instant.parse(last.updatedAt), UUID.fromString(last.id))
-            }
-            since != null -> since // ничего нового — курсор не двигаем, чтобы ничего не потерять
-            else -> ChangesCursor(java.time.Instant.now(), ChangesCursor.NIL_ID) // самая первая синхронизация, и то пусто
-        }
+        val page = EntryRepository.changesSince(call.userId(), since, limit)
+        // Курсор для следующего запроса — sync_seq ПОСЛЕДНЕЙ отданной записи, а не "текущее
+        // время сервера": иначе записи, которые уже лежат в базе, но не попали в эту страницу
+        // (обрезало лимитом), были бы навсегда пропущены.
+        val nextCursor = page.lastSeq ?: since ?: 0L // 0 — самая первая синхронизация, и то пусто
         call.respond(
             EntryChangesDto(
-                entries = changes,
+                entries = page.entries,
                 serverTime = nextCursor.toString(),
-                hasMore = changes.size == limit,
+                hasMore = page.entries.size == limit,
             ),
         )
     }

@@ -41,12 +41,12 @@ class SyncTest {
     @BeforeTest
     fun setup() {
         Database.connect("jdbc:h2:mem:devlog_sync;DB_CLOSE_DELAY=-1;MODE=PostgreSQL", driver = "org.h2.Driver")
-        transaction { SchemaUtils.create(Users, Projects, Entries, EntryStructured) }
+        transaction { SchemaUtils.create(Users, GithubIntegrations, Projects, Entries, EntryStructured) }
     }
 
     @AfterTest
     fun teardown() {
-        transaction { SchemaUtils.drop(EntryStructured, Entries, Projects, Users) }
+        transaction { SchemaUtils.drop(EntryStructured, Entries, Projects, GithubIntegrations, Users) }
     }
 
     private suspend fun token(client: HttpClient, email: String): String {
@@ -152,21 +152,27 @@ class SyncTest {
 
         // Курсор для следующей страницы — serverTime из ответа (как делает реальный клиент),
         // а не сырой updatedAt последней записи: несколько записей из repeat(3) вполне могут
-        // получить одинаковый updatedAt (клиенты на Windows не гарантируют разрешение точнее
-        // нескольких миллисекунд), и тогда "since = updatedAt" потерял бы запись с тем же
-        // временем, что не попала в эту страницу — serverTime отличает их по id (см. ChangesCursor).
+        // получить одинаковый updatedAt (быстрое создание подряд), и тогда "since = updatedAt"
+        // потерял бы запись с тем же временем, что не попала в эту страницу. serverTime —
+        // это sync_seq (строго монотонный счётчик БД, см. Entries.syncSeq в Tables.kt),
+        // а не updated_at, поэтому такой проблемы нет в принципе.
         val rest = changes(client, t, first.serverTime)
         assertEquals(1, rest.entries.size)
         assertFalse(rest.hasMore)
     }
 
     /**
-     * Регрессия на баг, из-за которого флакал предыдущий тест: раньше пагинация сравнивала
-     * только updatedAt (`greater since`) без тай-брейка по id. Если несколько записей получали
-     * ОДИНАКОВЫЙ updatedAt (легко происходит при быстром создании подряд — этот тест не
-     * полагается на удачное совпадение таймингов, а форсирует его через прямое обновление
-     * БД), при разрезании на страницы часть таких записей навсегда пропадала: они не
-     * "> since" (равны), но уже не попали в предыдущую страницу.
+     * Регрессия на баг, из-за которого флакал предыдущий тест: раньше пагинация была
+     * завязана на updated_at (сначала — голый `greater since`, затем — составной курсор
+     * updated_at+id для тай-брейка). Оба варианта ломались, если несколько записей получали
+     * ОДИНАКОВЫЙ updated_at (легко происходит при быстром создании подряд): без тай-брейка
+     * такая запись навсегда терялась между страницами, а тай-брейк по случайному id мог
+     * ИСКЛЮЧИТЬ более новую запись, если её UUID оказался "меньше" id записи-курсора — id
+     * не связан с реальным порядком вставки никак. Курсор синхронизации теперь — sync_seq
+     * (строго монотонный счётчик БД, см. Tables.kt), у него по определению не бывает
+     * совпадений, поэтому тест форсирует одинаковый updated_at (то, что раньше требовало
+     * удачи с таймингом) и проверяет, что обе записи всё равно находятся — и в общем
+     * ответе, и при постраничном обходе с лимитом 1 (самое чувствительное место старого бага).
      */
     @Test
     fun `несколько записей с одинаковым updatedAt не теряются между страницами`() = testApplication {
