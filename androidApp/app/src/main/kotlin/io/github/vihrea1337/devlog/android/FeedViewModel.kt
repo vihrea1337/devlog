@@ -8,6 +8,7 @@ import io.github.vihrea1337.devlog.EntryDto
 import io.github.vihrea1337.devlog.NewEntry
 import io.github.vihrea1337.devlog.ProjectDto
 import java.util.UUID
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -16,6 +17,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Всё состояние ленты в одном объекте: список записей, идёт ли запрос, текст ошибки.
@@ -105,47 +107,51 @@ class FeedViewModel : ViewModel() {
         }
     }
 
-    /** Добавить запись за указанный день; onSuccess очистит поле ввода. */
+    /**
+     * Добавить запись за указанный день — офлайн-first: запись сразу ложится в локальный
+     * кэш (подписка в init перерисует ленту сама) и в очередь на отправку, ждать сеть
+     * не нужно, поэтому onSuccess зовём сразу. refresh() в фоне попробует отправить
+     * очередь — если сети нет, запись просто останется "queued" до следующего sync().
+     */
     fun addEntry(occurredOn: String, rawText: String, onSuccess: () -> Unit) {
         if (rawText.isBlank()) {
             _state.update { it.copy(error = "Напишите, что сделали") }
             return
         }
         viewModelScope.launch {
-            _state.update { it.copy(isLoading = true, error = null) }
-            try {
-                ApiClient.api.addEntry(
+            withContext(Dispatchers.IO) {
+                repository.enqueueCreate(
                     NewEntry(
                         occurredOn = occurredOn,
                         rawText = rawText.trim(),
                         projectId = _state.value.selectedProjectId,
-                        // Свой id: если сеть подведёт и отправка повторится, дубля не будет.
+                        // Свой id: сервер идемпотентен по нему, повтор отправки не создаст дубль.
                         id = UUID.randomUUID().toString(),
                     ),
                 )
-                onSuccess()
-                refresh()
-            } catch (e: Exception) {
-                _state.update { it.copy(isLoading = false, error = e.message ?: "Ошибка сети") }
             }
+            onSuccess()
+            refresh()
         }
     }
 
-    /** Удалить запись по id и обновить ленту. */
+    /**
+     * Удалить запись по id — тоже офлайн-first: пропадает из кэша (и из ленты) сразу,
+     * реальный DELETE уходит на сервер в очереди при ближайшем refresh()/sync().
+     */
     fun deleteEntry(id: String) {
         viewModelScope.launch {
-            _state.update { it.copy(isLoading = true, error = null) }
-            try {
-                val r = ApiClient.api.deleteEntry(id)
-                if (!r.isSuccessful) throw IllegalStateException("HTTP ${r.code()}")
-                refresh()
-            } catch (e: Exception) {
-                _state.update { it.copy(isLoading = false, error = e.message ?: "Ошибка сети") }
-            }
+            withContext(Dispatchers.IO) { repository.enqueueDelete(id) }
+            refresh()
         }
     }
 
-    /** Заново отправить запись на обработку ИИ. */
+    /**
+     * Заново отправить запись на обработку ИИ. Офлайн-очередь для неё намеренно не заводим:
+     * это не изменение данных (в отличие от add/delete), а команда серверу "обработай ещё
+     * раз" — сама обработка в любом случае идёт на сервере через Groq, толку ставить команду
+     * в локальную очередь без сети нет, только заведомо мёртвый pending до следующего онлайна.
+     */
     fun reprocess(id: String) {
         viewModelScope.launch {
             try {
