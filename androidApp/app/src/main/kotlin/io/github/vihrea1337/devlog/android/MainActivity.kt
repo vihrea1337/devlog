@@ -26,6 +26,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import io.github.vihrea1337.devlog.android.data.AppDatabase
 
 /** Вкладки приложения. */
 private enum class AppTab(val title: String) {
@@ -41,6 +42,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         TokenStore.init(applicationContext) // загрузить сохранённый токен
+        AppDatabase.init(applicationContext) // офлайн-кэш ленты
         enableEdgeToEdge()
         setContent {
             MaterialTheme {
@@ -50,6 +52,9 @@ class MainActivity : ComponentActivity() {
                         MainScreen(
                             onLogout = {
                                 TokenStore.clear()
+                                // Следующий вход (возможно, другого пользователя) должен
+                                // скачать ленту заново, а не показать чужой кэш.
+                                AppDatabase.entryRepository.clearLocalData()
                                 loggedIn = false
                             },
                         )

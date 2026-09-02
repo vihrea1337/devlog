@@ -77,4 +77,8 @@ dependencies {
     implementation("com.squareup.retrofit2:retrofit:2.12.0")
     implementation("com.squareup.retrofit2:converter-kotlinx-serialization:2.12.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+
+    // Драйвер SQLDelight для настоящего файла БД на Android (схема/запросы — в shared,
+    // Ktor Client и рантайм SQLDelight приходят оттуда же транзитивно).
+    implementation("app.cash.sqldelight:android-driver:2.0.2")
 }

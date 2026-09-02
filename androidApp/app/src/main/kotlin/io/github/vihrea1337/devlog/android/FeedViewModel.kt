@@ -3,14 +3,17 @@ package io.github.vihrea1337.devlog.android
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import io.github.vihrea1337.devlog.android.data.ApiClient
+import io.github.vihrea1337.devlog.android.data.AppDatabase
 import io.github.vihrea1337.devlog.EntryDto
 import io.github.vihrea1337.devlog.NewEntry
 import io.github.vihrea1337.devlog.ProjectDto
 import java.util.UUID
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -30,15 +33,40 @@ data class FeedUiState(
 }
 
 /**
- * ViewModel ленты: хранит состояние и ходит в сеть, переживает поворот экрана.
- * Экран (Compose) только рисует состояние и зовёт эти функции по нажатиям.
+ * ViewModel ленты: показывает записи из локального офлайн-кэша (SQLDelight, в shared/)
+ * и умеет подтягивать изменения с сервера (refresh() = синхронизация по since-протоколу).
+ *
+ * Экран больше не ждёт сеть, чтобы что-то показать: лента рисуется из кэша сразу,
+ * а refresh() лишь пополняет его. Если сети нет — старые данные остаются на экране,
+ * только всплывает error.
  */
+@OptIn(ExperimentalCoroutinesApi::class)
 class FeedViewModel : ViewModel() {
+
+    private val repository = AppDatabase.entryRepository
 
     private val _state = MutableStateFlow(FeedUiState())
     val state: StateFlow<FeedUiState> = _state.asStateFlow()
 
+    /** Отдельный поток для фильтра проекта: переключает, какую Flow из кэша слушаем. */
+    private val selectedProjectId = MutableStateFlow<String?>(null)
+
     init {
+        // Подписка на локальный кэш — живёт всё время жизни ViewModel и сама
+        // перерисовывает ленту при любом изменении БД (в том числе во время sync()).
+        viewModelScope.launch {
+            selectedProjectId
+                .flatMapLatest { projectId ->
+                    if (projectId == null) repository.entries() else repository.entriesByProject(projectId)
+                }
+                .collect { list ->
+                    // Свежие дни сверху; внутри дня — свежие записи сверху.
+                    val sorted = list.sortedWith(
+                        compareByDescending<EntryDto> { it.occurredOn }.thenByDescending { it.createdAt },
+                    )
+                    _state.update { it.copy(entries = sorted) }
+                }
+        }
         loadProjects()
         refresh()
     }
@@ -52,25 +80,25 @@ class FeedViewModel : ViewModel() {
         }
     }
 
-    /** Показать только записи выбранного проекта (null — снова все). */
+    /** Показать только записи выбранного проекта (null — снова все). Переключает саму подписку. */
     fun selectProject(projectId: String?) {
+        selectedProjectId.value = projectId
         _state.update { it.copy(selectedProjectId = projectId) }
-        refresh()
     }
 
-    /** Перезагрузить ленту с сервера. */
+    /**
+     * Синхронизировать локальный кэш с сервером (since-протокол). Лента при этом уже
+     * видна из кэша — refresh() лишь дополняет её. Сетевая ошибка кэш не портит:
+     * то, что уже скачано раньше, остаётся на экране.
+     */
     fun refresh() {
         viewModelScope.launch {
             _state.update { it.copy(isLoading = true, error = null) }
             try {
-                val list = ApiClient.api.getEntries(_state.value.selectedProjectId)
-                // Свежие дни сверху; внутри дня — свежие записи сверху.
-                val sorted = list.sortedWith(
-                    compareByDescending<EntryDto> { it.occurredOn }.thenByDescending { it.createdAt },
-                )
-                _state.update { it.copy(entries = sorted, isLoading = false) }
-                // Пока что-то обрабатывается ИИ — обновимся сами через несколько секунд.
-                if (sorted.any { it.status == "queued" || it.status == "processing" }) refreshSoon()
+                repository.sync()
+                _state.update { it.copy(isLoading = false) }
+                // Пока что-то обрабатывается ИИ — подтянем результат ещё раз через несколько секунд.
+                if (_state.value.entries.any { it.status == "queued" || it.status == "processing" }) refreshSoon()
             } catch (e: Exception) {
                 _state.update { it.copy(isLoading = false, error = e.message ?: "Ошибка сети") }
             }
