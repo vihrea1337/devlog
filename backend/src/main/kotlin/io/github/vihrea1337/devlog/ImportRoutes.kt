@@ -60,4 +60,34 @@ fun Route.importRoutes() = authenticate("auth-jwt") {
 
         call.respond(ImportResultDto(result.days, result.commits, result.created, result.skipped))
     }
+
+    /**
+     * Импорт произвольного текстового логa (в т.ч. выгрузки/транскрипта Claude Code) —
+     * см. `docs/architecture.md` за обоснованием, почему формат общий, а не заточенный
+     * под конкретный экспорт.
+     */
+    post("/api/import/text") {
+        val body = call.receive<TextImportRequest>()
+        val text = body.text.trim()
+        if (text.isEmpty()) return@post call.badRequest("Текст пуст")
+        if (text.length > MAX_TEXT_IMPORT_LENGTH) {
+            return@post call.badRequest("Текст длиннее $MAX_TEXT_IMPORT_LENGTH символов — разбейте на части")
+        }
+
+        val projectId = body.projectId?.takeIf { it.isNotBlank() }?.let {
+            parseUuidOrNull(it) ?: return@post call.badRequest("Некорректный id проекта")
+        }
+        if (projectId != null && ProjectRepository.getById(call.userId(), projectId) == null) {
+            return@post call.badRequest("Проект не найден")
+        }
+
+        val result = TextImporter.import(call.userId(), text, projectId)
+        if (result.days == 0) {
+            return@post call.badRequest(
+                "Не нашли в тексте ни одной даты в формате ГГГГ-ММ-ДД — без неё непонятно, " +
+                    "к какому дню отнести содержимое",
+            )
+        }
+        call.respond(TextImportResultDto(result.days, result.linesMatched, result.created, result.skipped))
+    }
 }

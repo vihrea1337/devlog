@@ -233,3 +233,16 @@ data class ImportResultDto(
     val created: Int,
     val skipped: Int,
 )
+
+/** Тело POST /api/import/text: любой текстовый лог с датами (ГГГГ-ММ-ДД) внутри строк. */
+@Serializable
+data class TextImportRequest(val text: String, val projectId: String? = null)
+
+@Serializable
+data class TextImportResultDto(
+    val days: Int,
+    /** Сколько строк вообще попало хоть в один день (для обратной связи пользователю). */
+    val linesMatched: Int,
+    val created: Int,
+    val skipped: Int,
+)

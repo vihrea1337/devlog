@@ -17,6 +17,9 @@ const val MAX_RAW_TEXT_LENGTH = 20_000
 /** Потолок для текста отчёта: он собирается из многих записей, поэтому больше. */
 const val MAX_REPORT_LENGTH = 200_000
 
+/** Потолок текста для импорта: целый лог за много дней, но не безразмерная вставка. */
+const val MAX_TEXT_IMPORT_LENGTH = 300_000
+
 fun parseDateOrNull(raw: String): LocalDate? = runCatching { LocalDate.parse(raw) }.getOrNull()
 
 fun parseUuidOrNull(raw: String): UUID? = runCatching { UUID.fromString(raw) }.getOrNull()
