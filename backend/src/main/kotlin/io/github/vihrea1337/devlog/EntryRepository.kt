@@ -165,11 +165,25 @@ object EntryRepository {
      * `updated_at`: клиент запоминает время последней полученной записи и в следующий раз
      * просит только то, что новее.
      */
-    fun changesSince(userId: UUID, since: Instant?, limit: Int): List<EntryDto> {
+    fun changesSince(userId: UUID, since: ChangesCursor?, limit: Int): List<EntryDto> {
         val base = transaction {
             val q = Entries.selectAll().where { Entries.userId eq userId }
-            if (since != null) q.andWhere { Entries.updatedAt greater since }
-            q.orderBy(Entries.updatedAt to SortOrder.ASC)
+            if (since != null) {
+                // Составной курсор (updatedAt, id), а не просто "updatedAt > since": несколько
+                // записей МОГУТ получить одинаковый updatedAt (импорт создаёт их в цикле без
+                // задержки, а разрешение системных часов на Windows — единицы миллисекунд).
+                // Со строгим "greater" по одному updatedAt при разрезании на страницы часть
+                // записей с тем же самым updatedAt, что у последней записи прошлой страницы,
+                // навсегда пропадала бы: они не "> since" (равны), но уже не попали в прошлую
+                // страницу (обрезало лимитом). id — просто детерминированный тай-брейк,
+                // без него порядок среди "равных по времени" строк не определён и нестабилен
+                // между запусками (это и объясняло флак теста синхронизации).
+                q.andWhere {
+                    (Entries.updatedAt greater since.updatedAt) or
+                        ((Entries.updatedAt eq since.updatedAt) and (Entries.id greater since.afterId))
+                }
+            }
+            q.orderBy(Entries.updatedAt to SortOrder.ASC, Entries.id to SortOrder.ASC)
                 .limit(limit)
                 .map { it.toEntryDto() }
         }
@@ -321,4 +335,32 @@ object EntryRepository {
         aiError = this[Entries.aiError],
         deleted = this[Entries.deletedAt] != null,
     )
+}
+
+/**
+ * Курсор синхронизации: (updatedAt, id) записи, ПОСЛЕ которой продолжать. Составной,
+ * а не просто Instant — см. комментарий в [EntryRepository.changesSince] про то, почему
+ * одного updatedAt недостаточно, если несколько записей могут получить одинаковое время.
+ *
+ * Для клиента это НЕПРОЗРАЧНАЯ строка: он получает её как `serverTime` в ответе и присылает
+ * обратно как `since`, не разбирая — поэтому формат можно менять, не трогая контракт API
+ * (значение всё ещё String в EntryChangesDto/запросе).
+ */
+data class ChangesCursor(val updatedAt: Instant, val afterId: UUID) {
+    // "_" — гарантированно URL-safe разделитель (unreserved по RFC 3986) и не встречается
+    // ни в Instant.toString(), ни в UUID.toString(), так что парсинг однозначен.
+    override fun toString(): String = "${updatedAt}_$afterId"
+
+    companion object {
+        /** Ничего ещё не отдавали этому пользователю — стартуем с "любая запись > этого момента". */
+        val NIL_ID: UUID = UUID(0L, 0L)
+
+        fun parse(raw: String): ChangesCursor? {
+            val separator = raw.lastIndexOf('_')
+            if (separator < 0) return null
+            val instant = runCatching { Instant.parse(raw.substring(0, separator)) }.getOrNull() ?: return null
+            val id = runCatching { UUID.fromString(raw.substring(separator + 1)) }.getOrNull() ?: return null
+            return ChangesCursor(instant, id)
+        }
+    }
 }

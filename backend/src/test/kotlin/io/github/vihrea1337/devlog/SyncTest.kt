@@ -16,7 +16,9 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import org.jetbrains.exposed.sql.Database
 import org.jetbrains.exposed.sql.SchemaUtils
+import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
 import org.jetbrains.exposed.sql.transactions.transaction
+import org.jetbrains.exposed.sql.update
 import java.util.UUID
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
@@ -66,8 +68,12 @@ class SyncTest {
         return json.decodeFromString(r.bodyAsText())
     }
 
-    private suspend fun changes(client: HttpClient, token: String, since: String? = null): EntryChangesDto {
-        val q = if (since != null) "?since=$since" else ""
+    private suspend fun changes(client: HttpClient, token: String, since: String? = null, limit: Int? = null): EntryChangesDto {
+        val params = listOfNotNull(
+            since?.let { "since=$it" },
+            limit?.let { "limit=$it" },
+        )
+        val q = if (params.isEmpty()) "" else "?" + params.joinToString("&")
         val r = client.get("/api/entries/changes$q") { header(HttpHeaders.Authorization, "Bearer $token") }
         assertEquals(HttpStatusCode.OK, r.status, r.bodyAsText())
         return json.decodeFromString(r.bodyAsText())
@@ -144,9 +150,60 @@ class SyncTest {
         assertTrue(first.hasMore, "порция заполнена — клиенту надо прийти ещё раз")
         assertTrue(first.entries[0].updatedAt <= first.entries[1].updatedAt, "порядок по возрастанию updatedAt")
 
-        val rest = changes(client, t, first.entries.last().updatedAt)
+        // Курсор для следующей страницы — serverTime из ответа (как делает реальный клиент),
+        // а не сырой updatedAt последней записи: несколько записей из repeat(3) вполне могут
+        // получить одинаковый updatedAt (клиенты на Windows не гарантируют разрешение точнее
+        // нескольких миллисекунд), и тогда "since = updatedAt" потерял бы запись с тем же
+        // временем, что не попала в эту страницу — serverTime отличает их по id (см. ChangesCursor).
+        val rest = changes(client, t, first.serverTime)
         assertEquals(1, rest.entries.size)
         assertFalse(rest.hasMore)
+    }
+
+    /**
+     * Регрессия на баг, из-за которого флакал предыдущий тест: раньше пагинация сравнивала
+     * только updatedAt (`greater since`) без тай-брейка по id. Если несколько записей получали
+     * ОДИНАКОВЫЙ updatedAt (легко происходит при быстром создании подряд — этот тест не
+     * полагается на удачное совпадение таймингов, а форсирует его через прямое обновление
+     * БД), при разрезании на страницы часть таких записей навсегда пропадала: они не
+     * "> since" (равны), но уже не попали в предыдущую страницу.
+     */
+    @Test
+    fun `несколько записей с одинаковым updatedAt не теряются между страницами`() = testApplication {
+        application { module() }
+        val t = token(client, "s10@b.co")
+        val e1 = addEntry(client, t, "первая из пары с одинаковым временем")
+        val e2 = addEntry(client, t, "вторая из пары с одинаковым временем")
+        addEntry(client, t, "третья, время другое")
+
+        // Форсируем совпадение updatedAt у первых двух — то, что раньше требовало удачи
+        // с таймингом на быстрой машине, здесь гарантировано.
+        val tiedInstant = java.time.Instant.parse(
+            json.decodeFromString<EntryDto>(
+                client.get("/api/entries/${e1.id}") { header(HttpHeaders.Authorization, "Bearer $t") }.bodyAsText(),
+            ).updatedAt,
+        )
+        transaction {
+            Entries.update({ Entries.id eq UUID.fromString(e2.id) }) { it[updatedAt] = tiedInstant }
+        }
+
+        val page1 = changes(client, t, since = null)
+        // limit по умолчанию большой — все три должны прийти одной страницей, но проверяем
+        // главное: обе "одновременные" записи присутствуют, ни одна не потерялась.
+        val ids = page1.entries.map { it.id }.toSet()
+        assertTrue(e1.id in ids && e2.id in ids, "обе записи с одинаковым updatedAt должны быть в ответе: $ids")
+
+        // Тот же сценарий, но со страницами по ОДНОЙ записи — именно та граница, где раньше
+        // терялась запись: лимит=1 разрежет ровно между двумя записями с одинаковым updatedAt.
+        var since: String? = null
+        val collected = mutableListOf<EntryDto>()
+        for (i in 1..10) {
+            val page = changes(client, t, since, limit = 1)
+            collected += page.entries
+            since = page.serverTime
+            if (!page.hasMore) break
+        }
+        assertEquals(3, collected.distinctBy { it.id }.size, "все три записи должны быть собраны постранично без потерь и дублей")
     }
 
     @Test
