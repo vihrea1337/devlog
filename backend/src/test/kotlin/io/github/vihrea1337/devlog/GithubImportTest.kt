@@ -21,18 +21,30 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
  * Импорт коммитов с GitHub. В сеть не ходим: подменяем загрузку событий на кусок
  * настоящего ответа GitHub — так тесты стабильны и не зависят от лимитов API.
+ *
+ * ⚠️ ВНИМАНИЕ (2026-09-02): фикстура ниже содержит `payload.commits` — то, как раньше
+ * выглядел ответ GitHub. Ручная проверка с реальным API (см. docs/roadmap.md, Фаза 4)
+ * показала, что в РЕАЛЬНОМ ответе GitHub Events API этого поля больше нет — только
+ * `before`/`head`. Эти тесты остаются зелёными, потому что проверяют код против
+ * устаревшей формы ответа, а не потому что импорт реально работает. Не полагайся
+ * на зелёный GithubImportTest как на доказательство, что импорт работает в проде —
+ * для этого нужна отдельная ручная проверка с настоящим API, пока баг не починен.
  */
 class GithubImportTest {
     private val json = Json { ignoreUnknownKeys = true }
     private val today: LocalDate = LocalDate.now()
     private val yesterday: LocalDate = today.minusDays(1)
 
-    /** Кусок ответа /users/{login}/events/public: два пуша за сегодня и один за вчера. */
+    /**
+     * Кусок ответа /users/{login}/events/public: два пуша за сегодня и один за вчера.
+     * УСТАРЕВШАЯ форма (с `payload.commits`) — см. предупреждение в докстринге класса.
+     */
     private fun eventsJson(): String = """
         [
           {
@@ -72,13 +84,13 @@ class GithubImportTest {
     @BeforeTest
     fun setup() {
         Database.connect("jdbc:h2:mem:devlog_github;DB_CLOSE_DELAY=-1;MODE=PostgreSQL", driver = "org.h2.Driver")
-        transaction { SchemaUtils.create(Users, Projects, Entries, EntryStructured) }
-        GithubImporter.fetchEvents = { eventsJson() }
+        transaction { SchemaUtils.create(Users, GithubIntegrations, Projects, Entries, EntryStructured) }
+        GithubImporter.fetchEvents = { _, _ -> eventsJson() }
     }
 
     @AfterTest
     fun teardown() {
-        transaction { SchemaUtils.drop(EntryStructured, Entries, Projects, Users) }
+        transaction { SchemaUtils.drop(EntryStructured, Entries, Projects, GithubIntegrations, Users) }
     }
 
     private suspend fun token(client: HttpClient, email: String): String {
@@ -206,7 +218,7 @@ class GithubImportTest {
         application { module() }
         val t = token(client, "gh5@b.co")
         setLogin(client, t, "vihrea1337")
-        GithubImporter.fetchEvents = { error("Пользователь GitHub не найден") }
+        GithubImporter.fetchEvents = { _, _ -> error("Пользователь GitHub не найден") }
 
         val r = client.post("/api/import/github") {
             header(HttpHeaders.Authorization, "Bearer $t")
@@ -231,5 +243,43 @@ class GithubImportTest {
         }
 
         assertEquals(HttpStatusCode.BadRequest, r.status)
+    }
+
+    // --- Приватные репозитории: привязанный токен доезжает до fetchEvents ---
+
+    @Test
+    fun `с привязанным токеном GitHubImporter получает его для доступа к приватным репозиториям`() = testApplication {
+        application { module() }
+        val t = token(client, "gh7@b.co")
+        setLogin(client, t, "vihrea1337")
+        client.post("/api/me/github-token") {
+            header(HttpHeaders.Authorization, "Bearer $t")
+            contentType(ContentType.Application.Json)
+            setBody("""{"token":"ghp_privaterepo"}""")
+        }
+
+        var seenLogin: String? = null
+        var seenToken: String? = null
+        GithubImporter.fetchEvents = { login, tok -> seenLogin = login; seenToken = tok; eventsJson() }
+
+        val result = import(client, t)
+
+        assertEquals("vihrea1337", seenLogin)
+        assertEquals("ghp_privaterepo", seenToken, "токен должен доехать до похода в GitHub API")
+        assertEquals(2, result.created)
+    }
+
+    @Test
+    fun `без привязанного токена в GitHubImporter уходит null — только публичная активность`() = testApplication {
+        application { module() }
+        val t = token(client, "gh8@b.co")
+        setLogin(client, t, "vihrea1337")
+
+        var seenToken: String? = "не тронуто"
+        GithubImporter.fetchEvents = { _, tok -> seenToken = tok; eventsJson() }
+
+        import(client, t)
+
+        assertNull(seenToken)
     }
 }

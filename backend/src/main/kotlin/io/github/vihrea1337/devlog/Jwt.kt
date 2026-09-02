@@ -17,7 +17,10 @@ import java.util.UUID
 object JwtService {
     private const val DEV_SECRET = "dev-secret-change-me"
 
-    private val secret = System.getenv("JWT_SECRET")?.trim()?.ifEmpty { null } ?: DEV_SECRET
+    // internal, а не private: TokenCipher.kt использует его же как ключевой материал для
+    // шифрования персональных токенов (GitHub и т.п.) — заводить ради этого ещё один
+    // обязательный секрет не нужно, JWT_SECRET и так обязателен на внешнем адресе.
+    internal val secret = System.getenv("JWT_SECRET")?.trim()?.ifEmpty { null } ?: DEV_SECRET
     private val algorithm = Algorithm.HMAC256(secret)
 
     /**

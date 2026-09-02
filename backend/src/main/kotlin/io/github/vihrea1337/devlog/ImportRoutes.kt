@@ -32,7 +32,8 @@ fun Route.importRoutes() = authenticate("auth-jwt") {
         }
         if (from.isBefore(LocalDate.now().minusDays(MAX_IMPORT_DAYS))) {
             return@post call.badRequest(
-                "GitHub отдаёт только недавнюю публичную активность — примерно за последние 90 дней",
+                "GitHub отдаёт только недавнюю активность (Events API) — примерно за последние 90 дней, " +
+                    "даже с привязанным токеном",
             )
         }
 
@@ -48,7 +49,8 @@ fun Route.importRoutes() = authenticate("auth-jwt") {
             return@post call.badRequest("Сначала укажите свой логин на GitHub в профиле")
         }
 
-        val result = runCatching { GithubImporter.import(call.userId(), login, from, to, projectId) }
+        val token = GithubTokenRepository.tokenFor(call.userId())
+        val result = runCatching { GithubImporter.import(call.userId(), login, from, to, projectId, token) }
             .getOrElse { error ->
                 // Сюда попадают ответы GitHub «нет такого пользователя», «превышен лимит» и сбои сети.
                 call.application.environment.log.info("Импорт с GitHub не удался: ${error.message}")

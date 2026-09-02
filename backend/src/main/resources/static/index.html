@@ -256,8 +256,8 @@
       </div>
       <div class="muted" style="font-size:13px; margin-top:4px;">
         Коммиты за день превращаются в одну запись дневника — дальше её разбирает ИИ,
-        как обычную заметку. Берётся публичная активность: только открытые репозитории
-        и примерно последние 90 дней.
+        как обычную заметку. Без токена ниже — только публичная активность: открытые
+        репозитории и примерно последние 90 дней.
       </div>
 
       <label>Логин на GitHub</label>
@@ -267,6 +267,25 @@
           <button class="ghost" id="githubSave">Сохранить</button>
         </div>
       </div>
+
+      <label style="margin-top:10px; display:block;">Личный токен GitHub (для приватных репозиториев)</label>
+      <div class="muted" style="font-size:13px;">
+        Необязательно. С токеном импорт увидит и приватные репозитории, а не только
+        публичную активность. Сам токен нигде не показывается после сохранения —
+        только статус ниже. Создать: GitHub → Settings → Developer settings →
+        Personal access tokens (достаточно классического токена без специальных scope,
+        публичная информация о событиях доступна и так).
+      </div>
+      <div class="row" style="align-items:flex-end; margin-top:4px;">
+        <div style="flex:2;">
+          <input id="githubToken" type="password" placeholder="ghp_…">
+        </div>
+        <div style="flex:0 0 auto; padding-bottom:0; display:flex; gap:6px;">
+          <button class="ghost" id="githubTokenSave">Привязать</button>
+          <button class="ghost" id="githubTokenRemove">Отвязать</button>
+        </div>
+      </div>
+      <span class="muted" id="githubTokenStatus" style="font-size:13px;"></span>
 
       <div class="row" style="margin-top:10px;">
         <div><label>С какого дня</label><input id="importFrom" type="date"></div>
@@ -821,11 +840,19 @@
     if (res.ok) serverConfig = await res.json();
   }
 
+  // Статус токена GitHub — сам токен никогда не приходит с сервера, только этот флаг.
+  function updateGithubTokenStatus(user) {
+    $('githubTokenStatus').textContent = user && user.githubTokenBound
+      ? 'привязан — импорт видит и приватные репозитории'
+      : 'не привязан — импорт видит только публичную активность';
+  }
+
   async function showApp(user) {
     $('auth').classList.add('hidden');
     $('app').classList.remove('hidden');
     $('who').textContent = user ? user.displayName : '';
     if (user && user.githubLogin) $('githubLogin').value = user.githubLogin;
+    updateGithubTokenStatus(user);
     $('occurredOn').value = ymd(new Date());
     restoreDraft();
     $('rawText').focus();
@@ -918,6 +945,23 @@
     const res = await api('/api/me', { method: 'PUT', body: { githubLogin: $('githubLogin').value.trim() } });
     const data = await res.json().catch(() => ({}));
     $('importStatus').textContent = res.ok ? 'логин сохранён' : (data.error || 'не сохранилось');
+  };
+
+  $('githubTokenSave').onclick = async () => {
+    const token = $('githubToken').value.trim();
+    if (!token) { $('githubTokenStatus').textContent = 'Вставьте токен'; return; }
+    const res = await api('/api/me/github-token', { method: 'POST', body: { token } });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { $('githubTokenStatus').textContent = data.error || 'не сохранилось'; return; }
+    $('githubToken').value = ''; // поле не должно хранить токен дольше, чем нужно для отправки
+    updateGithubTokenStatus(data);
+  };
+
+  $('githubTokenRemove').onclick = async () => {
+    const res = await api('/api/me/github-token', { method: 'DELETE' });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { $('githubTokenStatus').textContent = data.error || 'не вышло'; return; }
+    updateGithubTokenStatus(data);
   };
 
   $('importBtn').onclick = async () => {

@@ -21,10 +21,14 @@ import java.util.UUID
  * Импорт коммитов с GitHub — киллер-фича из концепции: «нет истории кроме коммитов»
  * превращается в «коммиты сами становятся дневником».
  *
- * Берём **публичную активность** пользователя (`/users/{login}/events/public`) — это
- * открытый API, токен не нужен, поэтому нам не приходится хранить чужие секреты.
- * Ограничения такого источника честные и описаны в доках: только публичные репозитории,
+ * Без токена берём **публичную активность** (`/users/{login}/events/public`) — открытый
+ * API, секрет не нужен. Ограничения честные и описаны в доках: только публичные репозитории,
  * примерно последние 90 дней и не больше 300 последних событий.
+ *
+ * С привязанным личным токеном (см. GithubTokenRepository) ходим на `/users/{login}/events`
+ * (БЕЗ "/public") с заголовком Authorization — тот же endpoint, но GitHub отдаёт по нему
+ * ещё и приватные события, если токен принадлежит именно этому пользователю. Формат ответа
+ * идентичен публичному — весь разбор (parseCommitsByDay) переиспользуется без изменений.
  *
  * Что делаем с данными: коммиты за один день собираем в ОДНУ запись дневника — она уходит
  * тем же путём, что и заметка руками, и её так же разбирает ИИ.
@@ -46,16 +50,24 @@ object GithubImporter {
         HttpClient(CIO) { install(HttpTimeout) { requestTimeoutMillis = 20_000 } }
     }
 
-    /** Загрузка страницы событий. Вынесена отдельно, чтобы тесты подставляли свой ответ. */
-    var fetchEvents: suspend (login: String) -> String = { login ->
-        val response = client.get("https://api.github.com/users/$login/events/public?per_page=100") {
+    /**
+     * Загрузка страницы событий. Вынесена отдельно, чтобы тесты подставляли свой ответ.
+     * token = null → публичный endpoint без авторизации; token != null → тот же ресурс,
+     * но без "/public" и с заголовком Authorization — GitHub отдаёт приватные события тоже.
+     */
+    var fetchEvents: suspend (login: String, token: String?) -> String = { login, token ->
+        val path = if (token != null) "events" else "events/public"
+        val response = client.get("https://api.github.com/users/$login/$path?per_page=100") {
             header(HttpHeaders.Accept, "application/vnd.github+json")
             header(HttpHeaders.UserAgent, "DevLog")
+            // НЕ логировать этот заголовок целиком — токен не должен попасть в логи сервера.
+            if (token != null) header(HttpHeaders.Authorization, "Bearer $token")
         }
         if (!response.status.isSuccess()) {
             error(
                 when (response.status.value) {
                     404 -> "Пользователь GitHub не найден"
+                    401 -> "Токен GitHub недействителен или истёк — привяжите новый в настройках"
                     403 -> "GitHub временно отказывает в запросах (превышен лимит). Попробуйте позже"
                     else -> "GitHub ответил ${response.status.value}"
                 },
@@ -114,11 +126,19 @@ object GithubImporter {
         UUID.nameUUIDFromBytes("devlog-github:$userId:$day".toByteArray())
 
     /**
-     * Импортировать коммиты за период в записи дневника.
+     * Импортировать коммиты за период в записи дневника. token = null → только публичная
+     * активность; token != null (привязан в настройках) → видно и приватные репозитории.
      * Уже существующие дни не трогаем — иначе затёрли бы правки, сделанные руками.
      */
-    suspend fun import(userId: UUID, login: String, from: LocalDate, to: LocalDate, projectId: UUID?): ImportResult {
-        val byDay = parseCommitsByDay(fetchEvents(login), from, to)
+    suspend fun import(
+        userId: UUID,
+        login: String,
+        from: LocalDate,
+        to: LocalDate,
+        projectId: UUID?,
+        token: String? = null,
+    ): ImportResult {
+        val byDay = parseCommitsByDay(fetchEvents(login, token), from, to)
         var created = 0
         var skipped = 0
         var commits = 0

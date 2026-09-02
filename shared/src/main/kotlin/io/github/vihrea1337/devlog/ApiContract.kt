@@ -39,7 +39,16 @@ data class UserDto(
     val displayName: String,
     /** Логин на GitHub, если привязан: с ним работает импорт коммитов. */
     val githubLogin: String? = null,
+    /**
+     * Привязан ли личный токен GitHub (для импорта ПРИВАТНЫХ репозиториев). Сам токен
+     * сюда никогда не попадает — только факт привязки, см. POST/DELETE /api/me/github-token.
+     */
+    val githubTokenBound: Boolean = false,
 )
+
+/** Тело POST /api/me/github-token: привязать (или заменить) личный токен GitHub. */
+@Serializable
+data class BindGithubTokenRequest(val token: String)
 
 /** Тело PUT /api/me: пока меняем только привязку к GitHub. Пустая строка — отвязать. */
 @Serializable

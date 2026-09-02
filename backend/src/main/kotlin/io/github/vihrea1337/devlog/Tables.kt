@@ -1,9 +1,16 @@
 package io.github.vihrea1337.devlog
 
 import org.jetbrains.exposed.sql.ReferenceOption
+import org.jetbrains.exposed.sql.Sequence
 import org.jetbrains.exposed.sql.Table
 import org.jetbrains.exposed.sql.javatime.date
 import org.jetbrains.exposed.sql.javatime.timestamp
+
+/**
+ * Источник значений sync_seq (см. Entries.syncSeq) — строго монотонный курсор синхронизации,
+ * в отличие от updated_at (timestamp может повториться у нескольких записей).
+ */
+val EntriesSyncSeq = Sequence("entries_sync_seq")
 
 /**
  * Схема базы данных (чертёж таблиц). Каждый `object : Table` = одна таблица в PostgreSQL.
@@ -24,6 +31,19 @@ object Users : Table("users") {
     val githubLogin = varchar("github_login", 39).nullable()
     val createdAt = timestamp("created_at")
     override val primaryKey = PrimaryKey(id)
+}
+
+/**
+ * Персональный токен GitHub — по одному на пользователя, для импорта ПРИВАТНЫХ репозиториев
+ * (без токена импорт видит только публичную активность). Отдельная таблица, а не колонка
+ * в Users: изолирует секрет от общей таблицы аккаунтов, "привязать/отвязать" — самостоятельная
+ * операция. Значение хранится зашифрованным (см. TokenCipher.kt) — здесь только шифротекст.
+ */
+object GithubIntegrations : Table("github_integrations") {
+    val userId = reference("user_id", Users.id, onDelete = ReferenceOption.CASCADE)
+    val encryptedToken = text("encrypted_token")
+    val updatedAt = timestamp("updated_at")
+    override val primaryKey = PrimaryKey(userId)
 }
 
 /** Проекты — группировка записей. У проекта есть выключатель ИИ (приватность). */
@@ -51,7 +71,14 @@ object Entries : Table("entries") {
     val status = varchar("status", 20).default("queued")   // draft | queued | processing | structured | failed
     val timeSpentMin = integer("time_spent_min").nullable()
     val createdAt = timestamp("created_at")
-    val updatedAt = timestamp("updated_at")                // для синхронизации клиентов
+    val updatedAt = timestamp("updated_at")                // для отображения человеку
+    // Курсор синхронизации: строго монотонный (см. EntriesSyncSeq выше), а не updated_at —
+    // тот может совпасть у нескольких записей и сломать пагинацию "since X".
+    // .autoIncrement(EntriesSyncSeq) — не только для инсерта "бесплатным" значением
+    // по умолчанию (мы всё равно проставляем его явно и при insert, и при update),
+    // а прежде всего чтобы SchemaUtils.create() в тестах создавал саму последовательность —
+    // без этой привязки Exposed не знает, что entries_sync_seq вообще нужно создать.
+    val syncSeq = long("sync_seq").autoIncrement(EntriesSyncSeq)
 
     // --- Очередь обработки ИИ (её ведёт AiWorker) ---
     val aiAttempts = integer("ai_attempts").default(0)     // сколько раз пытались обработать

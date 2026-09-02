@@ -8,6 +8,7 @@ import io.ktor.server.auth.principal
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
+import io.ktor.server.routing.delete
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.put
@@ -80,7 +81,34 @@ fun Route.authRoutes() {
                 ?: return@put call.respond(HttpStatusCode.Unauthorized, ErrorResponse("Пользователь не найден"))
             call.respond(user.toDto())
         }
+
+        // Личный токен GitHub — для импорта ПРИВАТНЫХ репозиториев (в отличие от githubLogin,
+        // который нужен и для публичного импорта). Токен никогда не возвращается обратно —
+        // только UserDto.githubTokenBound (факт привязки), см. ApiContract.kt.
+        post("/api/me/github-token") {
+            val body = call.receive<BindGithubTokenRequest>()
+            val token = body.token.trim()
+            if (token.isEmpty()) return@post call.badRequest("Токен пуст")
+            if (token.length > 255) return@post call.badRequest("Похоже, это не токен GitHub — слишком длинная строка")
+            GithubTokenRepository.save(call.userId(), token)
+            val user = UserRepository.findById(call.userId())
+                ?: return@post call.respond(HttpStatusCode.Unauthorized, ErrorResponse("Пользователь не найден"))
+            call.respond(user.toDto())
+        }
+
+        delete("/api/me/github-token") {
+            GithubTokenRepository.remove(call.userId())
+            val user = UserRepository.findById(call.userId())
+                ?: return@delete call.respond(HttpStatusCode.Unauthorized, ErrorResponse("Пользователь не найден"))
+            call.respond(user.toDto())
+        }
     }
 }
 
-private fun UserRow.toDto() = UserDto(id.toString(), email, displayName, githubLogin)
+private fun UserRow.toDto() = UserDto(
+    id = id.toString(),
+    email = email,
+    displayName = displayName,
+    githubLogin = githubLogin,
+    githubTokenBound = GithubTokenRepository.isBound(id),
+)

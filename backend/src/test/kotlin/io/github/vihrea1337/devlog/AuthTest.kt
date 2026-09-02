@@ -31,12 +31,12 @@ class AuthTest {
     @BeforeTest
     fun setup() {
         Database.connect("jdbc:h2:mem:devlog_auth;DB_CLOSE_DELAY=-1;MODE=PostgreSQL", driver = "org.h2.Driver")
-        transaction { SchemaUtils.create(Users) }
+        transaction { SchemaUtils.create(Users, GithubIntegrations) }
     }
 
     @AfterTest
     fun teardown() {
-        transaction { SchemaUtils.drop(Users) }
+        transaction { SchemaUtils.drop(GithubIntegrations, Users) }
     }
 
     @Test

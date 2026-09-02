@@ -34,12 +34,12 @@ class EntryTest {
     @BeforeTest
     fun setup() {
         Database.connect("jdbc:h2:mem:devlog_entries;DB_CLOSE_DELAY=-1;MODE=PostgreSQL", driver = "org.h2.Driver")
-        transaction { SchemaUtils.create(Users, Projects, Entries, EntryStructured) }
+        transaction { SchemaUtils.create(Users, GithubIntegrations, Projects, Entries, EntryStructured) }
     }
 
     @AfterTest
     fun teardown() {
-        transaction { SchemaUtils.drop(EntryStructured, Entries, Projects, Users) }
+        transaction { SchemaUtils.drop(EntryStructured, Entries, Projects, GithubIntegrations, Users) }
     }
 
     private suspend fun registerToken(client: HttpClient, email: String): String {

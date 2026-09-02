@@ -38,12 +38,12 @@ class ValidationTest {
     @BeforeTest
     fun setup() {
         Database.connect("jdbc:h2:mem:devlog_validation;DB_CLOSE_DELAY=-1;MODE=PostgreSQL", driver = "org.h2.Driver")
-        transaction { SchemaUtils.create(Users, Projects, Entries, EntryStructured, Reports) }
+        transaction { SchemaUtils.create(Users, GithubIntegrations, Projects, Entries, EntryStructured, Reports) }
     }
 
     @AfterTest
     fun teardown() {
-        transaction { SchemaUtils.drop(Reports, EntryStructured, Entries, Projects, Users) }
+        transaction { SchemaUtils.drop(Reports, EntryStructured, Entries, Projects, GithubIntegrations, Users) }
     }
 
     private suspend fun token(client: HttpClient, email: String): String {
