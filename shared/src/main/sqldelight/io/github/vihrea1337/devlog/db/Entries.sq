@@ -1,0 +1,51 @@
+-- Локальный офлайн-кэш записей дневника. Одна строка = одна запись (EntryDto с сервера),
+-- structuredJson хранит StructuredDto сериализованным в JSON (SQLite не умеет вложенные объекты).
+
+CREATE TABLE entryEntity (
+    id TEXT NOT NULL PRIMARY KEY,
+    projectId TEXT,
+    occurredOn TEXT NOT NULL,
+    rawText TEXT NOT NULL,
+    source TEXT NOT NULL,
+    status TEXT NOT NULL,
+    timeSpentMin INTEGER,
+    createdAt TEXT NOT NULL,
+    updatedAt TEXT NOT NULL,
+    structuredJson TEXT,
+    aiError TEXT
+);
+
+-- Одна строка (id всегда 0): последний "since", полученный от сервера. Пустая таблица
+-- на старте означает "синхронизации ещё не было" — качаем всё с самого начала.
+CREATE TABLE syncCursor (
+    id INTEGER NOT NULL PRIMARY KEY,
+    lastServerTime TEXT NOT NULL
+);
+
+selectAll:
+SELECT * FROM entryEntity ORDER BY occurredOn DESC, createdAt DESC;
+
+selectByProject:
+SELECT * FROM entryEntity WHERE projectId = :projectId ORDER BY occurredOn DESC, createdAt DESC;
+
+-- INSERT OR REPLACE, а не ON CONFLICT ... DO UPDATE: дефолтный диалект SQLDelight (SQLite 3.18)
+-- ещё не знает upsert-синтаксис (появился в 3.24). REPLACE по PRIMARY KEY делает то же самое
+-- для наших целей — старая строка с этим id полностью заменяется новой.
+upsert:
+INSERT OR REPLACE INTO entryEntity(id, projectId, occurredOn, rawText, source, status, timeSpentMin, createdAt, updatedAt, structuredJson, aiError)
+VALUES (:id, :projectId, :occurredOn, :rawText, :source, :status, :timeSpentMin, :createdAt, :updatedAt, :structuredJson, :aiError);
+
+deleteById:
+DELETE FROM entryEntity WHERE id = :id;
+
+deleteAll:
+DELETE FROM entryEntity;
+
+getSyncCursor:
+SELECT lastServerTime FROM syncCursor WHERE id = 0;
+
+setSyncCursor:
+INSERT OR REPLACE INTO syncCursor(id, lastServerTime) VALUES (0, :lastServerTime);
+
+clearSyncCursor:
+DELETE FROM syncCursor;
