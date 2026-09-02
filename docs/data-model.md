@@ -56,7 +56,8 @@ _Позже (Фаза 4): `plan`, `ai_quota_used` для тарифов и ли�
 | status | varchar(20) | `draft` \| `queued` \| `processing` \| `structured` \| `failed` |
 | time_spent_min | int, NULL | потрачено минут (опционально) |
 | created_at | timestamp | |
-| updated_at | timestamp | для синхронизации |
+| updated_at | timestamp | для показа человеку (когда правили) |
+| sync_seq | bigint, из последовательности `entries_sync_seq` | курсор `/api/entries/changes` — строго монотонный, в отличие от updated_at (см. architecture.md) |
 | ai_attempts | int, default 0 | сколько раз пытались обработать (стоп после 3) |
 | ai_error | text, NULL | почему не вышло — показывается пользователю |
 | ai_started_at | timestamp, NULL | когда взяли в работу; ловит зависшие в `processing` |
@@ -99,18 +100,23 @@ _Последние три колонки — очередь обработки 
 | share_token | varchar(64) UNIQUE, NULL | для публичной ссылки работодателю |
 | created_at | timestamptz | |
 
-## integrations — внешние источники (закладка под Фазу 4)
+## github_integrations — персональный токен GitHub (Фаза 4, реализовано)
 | колонка | тип | заметки |
 |---|---|---|
-| id | uuid PK | |
-| user_id | uuid FK→users | |
-| type | varchar(20) | `github` \| `gitlab` |
-| credentials_ref | varchar(200) | ССЫЛКА на секрет, не сам токен в открытом виде |
-| config | jsonb | какие репозитории тянуть и т.п. |
-| created_at | timestamptz | |
+| user_id | uuid PK, FK→users | один токен на пользователя (по одному, не список) |
+| encrypted_token | text | AES-256-GCM, ключ — SHA-256 от JWT_SECRET (см. TokenCipher.kt) |
+| updated_at | timestamp | когда привязали/заменили |
+
+Это реализация закладки из более раннего плана (тогда таблица называлась `integrations`
+и была задумана как универсальная — `type` \| `credentials_ref` — со ссылкой на секрет,
+хранящийся ГДЕ-ТО ЕЩЁ). На практике для GitHub-токена завели отдельную специализированную
+таблицу и хранят сам секрет ЗАШИФРОВАННЫМ в этой же БД, а не ссылку на внешнее хранилище:
+секретов-менеджера в проекте нет и заводить его ради одного личного токена непропорционально
+для портфолио-проекта такого масштаба. Если появится второй провайдер (GitLab и т.п.) —
+имеет смысл вернуться к обобщённой схеме.
 
 ## Связи
-- `users 1—∞ projects`, `users 1—∞ entries`, `users 1—∞ reports`, `users 1—∞ integrations`
+- `users 1—∞ projects`, `users 1—∞ entries`, `users 1—∞ reports`, `users 1—1 github_integrations`
 - `projects 1—∞ entries` (или запись без проекта)
 - `entries 1—1 entry_structured`
 
