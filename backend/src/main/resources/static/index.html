@@ -215,6 +215,7 @@
       <div style="display:flex; gap:8px;">
         <button class="ghost" id="projectsBtn">Проекты</button>
         <button class="ghost" id="githubBtn">GitHub</button>
+        <button class="ghost" id="textImportBtn">Импорт текста</button>
         <button class="ghost" id="reportBtn">Отчёты</button>
         <button class="ghost" id="refresh">Обновить</button>
       </div>
@@ -273,6 +274,24 @@
       </div>
       <button class="primary" id="importBtn" style="margin-top:10px;">Импортировать</button>
       <span class="muted" id="importStatus" style="font-size:13px; margin-left:8px;"></span>
+    </div>
+
+    <!-- Панель импорта произвольного текста (в т.ч. выгрузки Claude Code) -->
+    <div id="textImportPanel" class="card hidden">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <b>Импорт текста</b>
+        <button class="ghost" id="textImportClose">Закрыть</button>
+      </div>
+      <div class="muted" style="font-size:13px; margin-top:4px;">
+        Вставьте любой текст с датами вида ГГГГ-ММ-ДД внутри строк — например, лог сессии
+        Claude Code, экспорт чата или свои заметки. Текст разрежется по дням, каждый день
+        станет отдельной записью и дальше разберётся ИИ, как обычная заметка. Повторная
+        вставка того же текста не создаст дублей.
+      </div>
+      <textarea id="textImportInput" rows="10" style="width:100%; margin-top:8px; font-family:monospace; font-size:12px;"
+        placeholder="2026-09-01 обсудили офлайн-кэш ленты...&#10;2026-09-02 занялись импортом текста..."></textarea>
+      <button class="primary" id="textImportSubmit" style="margin-top:10px;">Импортировать</button>
+      <span class="muted" id="textImportStatus" style="font-size:13px; margin-left:8px;"></span>
     </div>
 
     <!-- Панель отчётов -->
@@ -923,6 +942,35 @@
       loadStats();
     } finally {
       $('importBtn').disabled = false;
+    }
+  };
+
+  // --- Импорт произвольного текста (в т.ч. выгрузки Claude Code) ---
+  $('textImportBtn').onclick = () => {
+    $('textImportPanel').classList.toggle('hidden');
+    if (!$('textImportPanel').classList.contains('hidden')) $('textImportPanel').scrollIntoView({ behavior: 'smooth' });
+  };
+  $('textImportClose').onclick = () => $('textImportPanel').classList.add('hidden');
+
+  $('textImportSubmit').onclick = async () => {
+    const text = $('textImportInput').value.trim();
+    if (!text) { $('textImportStatus').textContent = 'Вставьте текст'; return; }
+    $('textImportSubmit').disabled = true;
+    $('textImportStatus').textContent = 'Разбираем…';
+    try {
+      const res = await api('/api/import/text', {
+        method: 'POST',
+        body: { text, projectId: $('feedFilter').value || null },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { $('textImportStatus').textContent = data.error || 'Не вышло (' + res.status + ')'; return; }
+      $('textImportStatus').textContent =
+        `дней: ${data.days}, записей создано: ${data.created}` + (data.skipped ? `, уже было: ${data.skipped}` : '');
+      $('textImportInput').value = '';
+      loadEntries();
+      loadStats();
+    } finally {
+      $('textImportSubmit').disabled = false;
     }
   };
 
