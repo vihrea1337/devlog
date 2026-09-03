@@ -64,6 +64,45 @@ fun Route.importRoutes() = authenticate("auth-jwt") {
     }
 
     /**
+     * Импорт коммитов с GitLab — второй провайдер, см. GitlabImport.kt за тем, чем реально
+     * отличается его устройство от GitHub (не просто "то же самое, другое имя"). Токен
+     * здесь ОБЯЗАТЕЛЕН (у GitLab нет анонимного режима) — без привязанного токена сразу 400,
+     * а не тихий "пустой" импорт.
+     */
+    post("/api/import/gitlab") {
+        val body = call.receive<GitlabImportRequest>()
+        val from = parseDateOrNull(body.periodStart)
+            ?: return@post call.badRequest("Некорректная дата начала периода")
+        val to = parseDateOrNull(body.periodEnd)
+            ?: return@post call.badRequest("Некорректная дата конца периода")
+        if (to.isBefore(from)) return@post call.badRequest("Конец периода раньше начала")
+        if (java.time.temporal.ChronoUnit.DAYS.between(from, to) > MAX_IMPORT_DAYS) {
+            return@post call.badRequest("Слишком длинный период: максимум $MAX_IMPORT_DAYS дней за раз")
+        }
+
+        val projectId = body.projectId?.takeIf { it.isNotBlank() }?.let {
+            parseUuidOrNull(it) ?: return@post call.badRequest("Некорректный id проекта")
+        }
+        if (projectId != null && ProjectRepository.getById(call.userId(), projectId) == null) {
+            return@post call.badRequest("Проект не найден")
+        }
+
+        val token = GitlabTokenRepository.tokenFor(call.userId())
+            ?: return@post call.badRequest("Сначала привяжите личный токен GitLab в настройках — без него импортировать нечего")
+
+        val result = runCatching { GitlabImporter.import(call.userId(), from, to, projectId, token) }
+            .getOrElse { error ->
+                call.application.environment.log.info("Импорт с GitLab не удался: ${error.message}")
+                return@post call.respond(
+                    HttpStatusCode.BadGateway,
+                    ErrorResponse(error.message ?: "Не удалось получить данные с GitLab"),
+                )
+            }
+
+        call.respond(ImportResultDto(result.days, result.commits, result.created, result.skipped, result.truncated))
+    }
+
+    /**
      * Импорт произвольного текстового логa (в т.ч. выгрузки/транскрипта Claude Code) —
      * см. `docs/architecture.md` за обоснованием, почему формат общий, а не заточенный
      * под конкретный экспорт.

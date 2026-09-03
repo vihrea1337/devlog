@@ -215,6 +215,7 @@
       <div style="display:flex; gap:8px;">
         <button class="ghost" id="projectsBtn">Проекты</button>
         <button class="ghost" id="githubBtn">GitHub</button>
+        <button class="ghost" id="gitlabBtn">GitLab</button>
         <button class="ghost" id="textImportBtn">Импорт текста</button>
         <button class="ghost" id="reportBtn">Отчёты</button>
         <button class="ghost" id="refresh">Обновить</button>
@@ -293,6 +294,43 @@
       </div>
       <button class="primary" id="importBtn" style="margin-top:10px;">Импортировать</button>
       <span class="muted" id="importStatus" style="font-size:13px; margin-left:8px;"></span>
+    </div>
+
+    <!-- Панель импорта коммитов с GitLab -->
+    <div id="gitlabPanel" class="card hidden">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <b>Импорт коммитов с GitLab</b>
+        <button class="ghost" id="gitlabClose">Закрыть</button>
+      </div>
+      <div class="muted" style="font-size:13px; margin-top:4px;">
+        Та же идея, что у GitHub: коммиты за день становятся одной записью, дальше её
+        разбирает ИИ. У GitLab, в отличие от GitHub, нет анонимного/публичного доступа —
+        токен обязателен, поэтому логин указывать не нужно: импорт видит активность
+        владельца токена.
+      </div>
+
+      <label style="margin-top:10px; display:block;">Личный токен GitLab</label>
+      <div class="muted" style="font-size:13px;">
+        Обязательно. Токен нигде не показывается после сохранения — только статус ниже.
+        Создать: GitLab → Preferences → Access Tokens (достаточно scope <code>read_api</code>).
+      </div>
+      <div class="row" style="align-items:flex-end; margin-top:4px;">
+        <div style="flex:2;">
+          <input id="gitlabToken" type="password" placeholder="glpat-…">
+        </div>
+        <div style="flex:0 0 auto; padding-bottom:0; display:flex; gap:6px;">
+          <button class="ghost" id="gitlabTokenSave">Привязать</button>
+          <button class="ghost" id="gitlabTokenRemove">Отвязать</button>
+        </div>
+      </div>
+      <span class="muted" id="gitlabTokenStatus" style="font-size:13px;"></span>
+
+      <div class="row" style="margin-top:10px;">
+        <div><label>С какого дня</label><input id="gitlabImportFrom" type="date"></div>
+        <div><label>По какой день</label><input id="gitlabImportTo" type="date"></div>
+      </div>
+      <button class="primary" id="gitlabImportBtn" style="margin-top:10px;">Импортировать</button>
+      <span class="muted" id="gitlabImportStatus" style="font-size:13px; margin-left:8px;"></span>
     </div>
 
     <!-- Панель импорта произвольного текста (в т.ч. выгрузки Claude Code) -->
@@ -849,12 +887,20 @@
       : 'не привязан — импорт видит только публичную активность';
   }
 
+  // Статус токена GitLab — у GitLab токен обязателен для любого импорта (не только приватного).
+  function updateGitlabTokenStatus(user) {
+    $('gitlabTokenStatus').textContent = user && user.gitlabTokenBound
+      ? 'привязан — можно импортировать'
+      : 'не привязан — без токена импортировать нечего';
+  }
+
   async function showApp(user) {
     $('auth').classList.add('hidden');
     $('app').classList.remove('hidden');
     $('who').textContent = user ? user.displayName : '';
     if (user && user.githubLogin) $('githubLogin').value = user.githubLogin;
     updateGithubTokenStatus(user);
+    updateGitlabTokenStatus(user);
     $('occurredOn').value = ymd(new Date());
     restoreDraft();
     $('rawText').focus();
@@ -1027,6 +1073,63 @@
       loadStats();
     } finally {
       $('importBtn').disabled = false;
+    }
+  };
+
+  // --- Импорт коммитов с GitLab (та же идея, что у GitHub, но токен обязателен) ---
+  $('gitlabBtn').onclick = () => {
+    $('gitlabPanel').classList.toggle('hidden');
+    if ($('gitlabPanel').classList.contains('hidden')) return;
+    if (!$('gitlabImportFrom').value) {
+      const weekAgo = new Date();
+      weekAgo.setDate(weekAgo.getDate() - 7);
+      $('gitlabImportFrom').value = ymd(weekAgo);
+      $('gitlabImportTo').value = ymd(new Date());
+    }
+    $('gitlabPanel').scrollIntoView({ behavior: 'smooth' });
+  };
+  $('gitlabClose').onclick = () => $('gitlabPanel').classList.add('hidden');
+
+  $('gitlabTokenSave').onclick = async () => {
+    const token = $('gitlabToken').value.trim();
+    if (!token) { $('gitlabTokenStatus').textContent = 'Вставьте токен'; return; }
+    const res = await api('/api/me/gitlab-token', { method: 'POST', body: { token } });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { $('gitlabTokenStatus').textContent = data.error || 'не сохранилось'; return; }
+    $('gitlabToken').value = ''; // поле не должно хранить токен дольше, чем нужно для отправки
+    updateGitlabTokenStatus(data);
+  };
+
+  $('gitlabTokenRemove').onclick = async () => {
+    const res = await api('/api/me/gitlab-token', { method: 'DELETE' });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { $('gitlabTokenStatus').textContent = data.error || 'не вышло'; return; }
+    updateGitlabTokenStatus(data);
+  };
+
+  $('gitlabImportBtn').onclick = async () => {
+    $('gitlabImportBtn').disabled = true;
+    $('gitlabImportStatus').textContent = 'Спрашиваем GitLab…';
+    try {
+      const res = await api('/api/import/gitlab', {
+        method: 'POST',
+        body: {
+          periodStart: $('gitlabImportFrom').value,
+          periodEnd: $('gitlabImportTo').value,
+          projectId: $('feedFilter').value || null,
+        },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { $('gitlabImportStatus').textContent = data.error || 'Не вышло (' + res.status + ')'; return; }
+      $('gitlabImportStatus').textContent = (data.commits
+        ? `коммитов: ${data.commits}, записей создано: ${data.created}` +
+          (data.skipped ? `, уже было: ${data.skipped}` : '')
+        : 'за этот период коммитов не нашлось') +
+        (data.truncated ? ' (упёрлись в лимит запросов к GitLab — часть пушей не проверена, попробуйте период короче)' : '');
+      loadEntries();
+      loadStats();
+    } finally {
+      $('gitlabImportBtn').disabled = false;
     }
   };
 

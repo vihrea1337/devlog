@@ -46,13 +46,13 @@ class AiWorkerTest {
     @BeforeTest
     fun setup() {
         Database.connect("jdbc:h2:mem:devlog_worker;DB_CLOSE_DELAY=-1;MODE=PostgreSQL", driver = "org.h2.Driver")
-        transaction { SchemaUtils.create(Users, GithubIntegrations, Projects, Entries, EntryStructured) }
+        transaction { SchemaUtils.create(Users, GithubIntegrations, GitlabIntegrations, Projects, Entries, EntryStructured) }
         userId = UserRepository.create("worker@test.co", Passwords.hash("secret1"), "W").id
     }
 
     @AfterTest
     fun teardown() {
-        transaction { SchemaUtils.drop(EntryStructured, Entries, Projects, GithubIntegrations, Users) }
+        transaction { SchemaUtils.drop(EntryStructured, Entries, Projects, GitlabIntegrations, GithubIntegrations, Users) }
     }
 
     private fun newEntry(text: String = "чинил баг с виджетом"): UUID {

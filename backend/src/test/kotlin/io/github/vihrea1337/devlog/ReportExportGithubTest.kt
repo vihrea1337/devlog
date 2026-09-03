@@ -31,7 +31,7 @@ class ReportExportGithubTest {
     @BeforeTest
     fun setup() {
         Database.connect("jdbc:h2:mem:devlog_report_export;DB_CLOSE_DELAY=-1;MODE=PostgreSQL", driver = "org.h2.Driver")
-        transaction { SchemaUtils.create(Users, GithubIntegrations, Projects, Entries, EntryStructured, Reports) }
+        transaction { SchemaUtils.create(Users, GithubIntegrations, GitlabIntegrations, Projects, Entries, EntryStructured, Reports) }
         // По умолчанию — файла ещё нет, запись успешна и ничего не делает с сетью.
         GithubExporter.fetchFile = { _, _, _ -> null }
         GithubExporter.putFile = { _, _, _, _, _, _ -> }
@@ -39,7 +39,7 @@ class ReportExportGithubTest {
 
     @AfterTest
     fun teardown() {
-        transaction { SchemaUtils.drop(Reports, EntryStructured, Entries, Projects, GithubIntegrations, Users) }
+        transaction { SchemaUtils.drop(Reports, EntryStructured, Entries, Projects, GitlabIntegrations, GithubIntegrations, Users) }
     }
 
     private suspend fun token(client: HttpClient, email: String): String {

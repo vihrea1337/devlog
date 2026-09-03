@@ -44,11 +44,21 @@ data class UserDto(
      * сюда никогда не попадает — только факт привязки, см. POST/DELETE /api/me/github-token.
      */
     val githubTokenBound: Boolean = false,
+    /**
+     * Привязан ли личный токен GitLab. В отличие от GitHub, у GitLab нет отдельного
+     * "логина" в настройках — токен обязателен для импорта вообще, а не только для
+     * приватных репозиториев (см. GitlabImport.kt), поэтому логина здесь нет.
+     */
+    val gitlabTokenBound: Boolean = false,
 )
 
 /** Тело POST /api/me/github-token: привязать (или заменить) личный токен GitHub. */
 @Serializable
 data class BindGithubTokenRequest(val token: String)
+
+/** Тело POST /api/me/gitlab-token: привязать (или заменить) личный токен GitLab. */
+@Serializable
+data class BindGitlabTokenRequest(val token: String)
 
 /** Тело PUT /api/me: пока меняем только привязку к GitHub. Пустая строка — отвязать. */
 @Serializable
@@ -257,6 +267,16 @@ data class ImportResultDto(
     val skipped: Int,
     /** Догрузка коммитов остановилась раньше конца периода — упёрлись в лимит запросов. */
     val truncated: Boolean = false,
+)
+
+// --- Импорт коммитов с GitLab (та же форма результата — ImportResultDto выше) ---
+
+/** Тело POST /api/import/gitlab: без логина — токен обязателен, GET /events сам возвращает его владельца. */
+@Serializable
+data class GitlabImportRequest(
+    val periodStart: String,
+    val periodEnd: String,
+    val projectId: String? = null,
 )
 
 /** Тело POST /api/import/text: любой текстовый лог с датами (ГГГГ-ММ-ДД) внутри строк. */

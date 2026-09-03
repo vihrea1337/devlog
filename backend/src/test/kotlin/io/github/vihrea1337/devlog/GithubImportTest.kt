@@ -95,14 +95,14 @@ class GithubImportTest {
     @BeforeTest
     fun setup() {
         Database.connect("jdbc:h2:mem:devlog_github;DB_CLOSE_DELAY=-1;MODE=PostgreSQL", driver = "org.h2.Driver")
-        transaction { SchemaUtils.create(Users, GithubIntegrations, Projects, Entries, EntryStructured) }
+        transaction { SchemaUtils.create(Users, GithubIntegrations, GitlabIntegrations, Projects, Entries, EntryStructured) }
         GithubImporter.fetchEvents = { _, _ -> eventsJson() }
         GithubImporter.fetchCompare = defaultFetchCompare()
     }
 
     @AfterTest
     fun teardown() {
-        transaction { SchemaUtils.drop(EntryStructured, Entries, Projects, GithubIntegrations, Users) }
+        transaction { SchemaUtils.drop(EntryStructured, Entries, Projects, GitlabIntegrations, GithubIntegrations, Users) }
     }
 
     private suspend fun token(client: HttpClient, email: String): String {

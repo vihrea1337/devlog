@@ -102,6 +102,27 @@ fun Route.authRoutes() {
                 ?: return@delete call.respond(HttpStatusCode.Unauthorized, ErrorResponse("Пользователь не найден"))
             call.respond(user.toDto())
         }
+
+        // Личный токен GitLab — в отличие от GitHub, здесь он ОБЯЗАТЕЛЕН для любого импорта
+        // (у GitLab нет анонимного режима, см. GitlabImport.kt), поэтому логина в профиле нет —
+        // только сам токен.
+        post("/api/me/gitlab-token") {
+            val body = call.receive<BindGitlabTokenRequest>()
+            val token = body.token.trim()
+            if (token.isEmpty()) return@post call.badRequest("Токен пуст")
+            if (token.length > 255) return@post call.badRequest("Похоже, это не токен GitLab — слишком длинная строка")
+            GitlabTokenRepository.save(call.userId(), token)
+            val user = UserRepository.findById(call.userId())
+                ?: return@post call.respond(HttpStatusCode.Unauthorized, ErrorResponse("Пользователь не найден"))
+            call.respond(user.toDto())
+        }
+
+        delete("/api/me/gitlab-token") {
+            GitlabTokenRepository.remove(call.userId())
+            val user = UserRepository.findById(call.userId())
+                ?: return@delete call.respond(HttpStatusCode.Unauthorized, ErrorResponse("Пользователь не найден"))
+            call.respond(user.toDto())
+        }
     }
 }
 
@@ -111,4 +132,5 @@ private fun UserRow.toDto() = UserDto(
     displayName = displayName,
     githubLogin = githubLogin,
     githubTokenBound = GithubTokenRepository.isBound(id),
+    gitlabTokenBound = GitlabTokenRepository.isBound(id),
 )

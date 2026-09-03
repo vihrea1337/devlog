@@ -46,6 +46,18 @@ object GithubIntegrations : Table("github_integrations") {
     override val primaryKey = PrimaryKey(userId)
 }
 
+/**
+ * Персональный токен GitLab — тот же принцип, что у [GithubIntegrations], но у GitLab
+ * токен не опционален: в отличие от GitHub, у GitLab Events API нет анонимного/публичного
+ * режима (см. GitlabImport.kt) — без токена импортировать вообще нечего.
+ */
+object GitlabIntegrations : Table("gitlab_integrations") {
+    val userId = reference("user_id", Users.id, onDelete = ReferenceOption.CASCADE)
+    val encryptedToken = text("encrypted_token")
+    val updatedAt = timestamp("updated_at")
+    override val primaryKey = PrimaryKey(userId)
+}
+
 /** Проекты — группировка записей. У проекта есть выключатель ИИ (приватность). */
 object Projects : Table("projects") {
     val id = uuid("id")

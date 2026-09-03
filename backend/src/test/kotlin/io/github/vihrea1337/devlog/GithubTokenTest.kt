@@ -37,12 +37,12 @@ class GithubTokenTest {
     @BeforeTest
     fun setup() {
         Database.connect("jdbc:h2:mem:devlog_ghtoken;DB_CLOSE_DELAY=-1;MODE=PostgreSQL", driver = "org.h2.Driver")
-        transaction { SchemaUtils.create(Users, GithubIntegrations) }
+        transaction { SchemaUtils.create(Users, GithubIntegrations, GitlabIntegrations) }
     }
 
     @AfterTest
     fun teardown() {
-        transaction { SchemaUtils.drop(GithubIntegrations, Users) }
+        transaction { SchemaUtils.drop(GitlabIntegrations, GithubIntegrations, Users) }
     }
 
     private suspend fun token(client: HttpClient, email: String): String {
