@@ -27,8 +27,22 @@ import java.util.UUID
  *
  * С привязанным личным токеном (см. GithubTokenRepository) ходим на `/users/{login}/events`
  * (БЕЗ "/public") с заголовком Authorization — тот же endpoint, но GitHub отдаёт по нему
- * ещё и приватные события, если токен принадлежит именно этому пользователю. Формат ответа
- * идентичен публичному — весь разбор (parseCommitsByDay) переиспользуется без изменений.
+ * ещё и приватные события, если токен принадлежит именно этому пользователю.
+ *
+ * ВАЖНО (обнаружено 2026-09-02 при ручной проверке с реальным API): `PushEvent.payload`
+ * в реальном ответе GitHub давно НЕ содержит списка коммитов — только `before`/`head`
+ * (SHA до и после пуша). Поэтому для каждого пуша делаем ОДИН дополнительный запрос —
+ * GitHub Compare API (`/repos/{repo}/compare/{before}...{head}`), который и возвращает
+ * настоящие сообщения коммитов. Выбран Compare, а не `/commits?sha=&since=&until=`:
+ * он даёт ТОЧНО те коммиты, что вошли именно в этот пуш (без риска зацепить чужие
+ * коммиты из других веток тем же временем, как было бы с since/until), и это тот же
+ * один запрос на пуш, а не запрос на коммит.
+ *
+ * Это удваивает число запросов к API (1 на пуш) — с учётом лимита GitHub (5000/час
+ * с токеном, 60/час без) без токена легко упереться в лимит уже на паре десятков
+ * пушей, поэтому число догрузок ограничено (см. MAX_COMPARE_CALLS_*) и rate-limit
+ * от GitHub (403 с `X-RateLimit-Remaining: 0`) останавливает догрузку сразу, а не
+ * долбит API дальше — то, что уже собрано, всё равно уходит в записи дневника.
  *
  * Что делаем с данными: коммиты за один день собираем в ОДНУ запись дневника — она уходит
  * тем же путём, что и заметка руками, и её так же разбирает ИИ.
@@ -40,8 +54,32 @@ data class GithubCommit(val repo: String, val message: String, val sha: String) 
     val url: String get() = "https://github.com/$repo/commit/$sha"
 }
 
+/** Один пуш из ленты событий — ещё без коммитов, только ссылка "что сравнивать". */
+data class GithubPushRef(val repo: String, val before: String, val head: String)
+
+/** SHA "с самого начала" — GitHub присылает такой `before` при создании новой ветки. */
+private const val ZERO_SHA = "0000000000000000000000000000000000000000"
+
+/** Без токена — 60 запросов/час на весь аккаунт, поэтому лимит заметно строже. internal — тест сверяет число. */
+internal const val MAX_COMPARE_CALLS_ANONYMOUS = 15
+internal const val MAX_COMPARE_CALLS_AUTHENTICATED = 150
+
 /** Результат импорта для ответа клиенту. */
-data class ImportResult(val days: Int, val commits: Int, val created: Int, val skipped: Int)
+data class ImportResult(
+    val days: Int,
+    val commits: Int,
+    val created: Int,
+    val skipped: Int,
+    /** Догрузка коммитов остановилась раньше конца — упёрлись в лимит запросов (свой или GitHub). */
+    val truncated: Boolean,
+)
+
+/**
+ * GitHub ответил 403 именно из-за исчерпанного лимита запросов (не "нет доступа").
+ * internal, а не private: тесты подставляют свой fetchCompare и должны уметь
+ * бросить эту же ошибку, чтобы проверить, что импорт останавливается, а не долбит API дальше.
+ */
+internal class GithubRateLimitException : RuntimeException("GitHub rate limit exceeded")
 
 object GithubImporter {
     private val json = Json { ignoreUnknownKeys = true }
@@ -77,33 +115,70 @@ object GithubImporter {
     }
 
     /**
-     * Разобрать ответ GitHub в коммиты по дням. Функция чистая (без сети и БД) —
-     * её удобно тестировать на сохранённом куске настоящего ответа.
+     * Догрузка настоящих коммитов одного пуша через Compare API. Вынесена отдельно
+     * (как и fetchEvents), чтобы тесты подставляли свой ответ без реальной сети.
+     * Бросает [GithubRateLimitException], если это именно исчерпанный лимit запросов —
+     * вызывающий код (см. [import]) должен остановить догрузку остальных пушей, а не
+     * долбить GitHub дальше и получать один и тот же отказ на каждый следующий запрос.
      */
-    fun parseCommitsByDay(body: String, from: LocalDate, to: LocalDate): Map<LocalDate, List<GithubCommit>> {
+    var fetchCompare: suspend (repo: String, before: String, head: String, token: String?) -> String =
+        { repo, before, head, token ->
+            val response = client.get("https://api.github.com/repos/$repo/compare/$before...$head") {
+                header(HttpHeaders.Accept, "application/vnd.github+json")
+                header(HttpHeaders.UserAgent, "DevLog")
+                if (token != null) header(HttpHeaders.Authorization, "Bearer $token")
+            }
+            if (!response.status.isSuccess()) {
+                val rateLimited = response.status.value == 403 &&
+                    response.headers["X-RateLimit-Remaining"] == "0"
+                if (rateLimited) throw GithubRateLimitException()
+                // Отдельный пуш не удалось сравнить (например, ветку успели удалить,
+                // force-push унёс before) — не роняем весь импорт из-за одного пуша.
+                error("GitHub ответил ${response.status.value} на compare $repo $before...$head")
+            }
+            response.bodyAsText()
+        }
+
+    /**
+     * Разобрать ответ ленты событий в пуши по дням — БЕЗ коммитов, только ссылки
+     * "что с чем сравнивать" (см. [GithubPushRef]). Функция чистая (без сети и БД) —
+     * удобно тестировать на сохранённом куске настоящего ответа.
+     */
+    fun parsePushesByDay(body: String, from: LocalDate, to: LocalDate): Map<LocalDate, List<GithubPushRef>> {
         val events = runCatching { json.parseToJsonElement(body).jsonArray }.getOrElse { return emptyMap() }
-        val byDay = sortedMapOf<LocalDate, MutableList<GithubCommit>>()
+        val byDay = sortedMapOf<LocalDate, MutableList<GithubPushRef>>()
 
         for (element in events) {
             val event = element.jsonObject
-            // Нас интересуют только пуши — в них лежат сами коммиты.
+            // Нас интересуют только пуши — остальные типы событий коммитов не несут.
             if (event["type"]?.jsonPrimitive?.content != "PushEvent") continue
             val createdAt = event["created_at"]?.jsonPrimitive?.content ?: continue
             val day = runCatching { Instant.parse(createdAt).atZone(ZoneOffset.UTC).toLocalDate() }.getOrNull() ?: continue
             if (day < from || day > to) continue
 
             val repo = event["repo"]?.jsonObject?.get("name")?.jsonPrimitive?.content ?: continue
-            val commits = event["payload"]?.jsonObject?.get("commits")?.jsonArray ?: continue
-            for (commitElement in commits) {
-                val commit = commitElement.jsonObject
-                val message = commit["message"]?.jsonPrimitive?.content?.trim().orEmpty()
-                val sha = commit["sha"]?.jsonPrimitive?.content.orEmpty()
-                if (message.isEmpty() || sha.isEmpty()) continue
-                byDay.getOrPut(day) { mutableListOf() }.add(GithubCommit(repo, message, sha))
-            }
+            val payload = event["payload"]?.jsonObject ?: continue
+            val before = payload["before"]?.jsonPrimitive?.content ?: continue
+            val head = payload["head"]?.jsonPrimitive?.content ?: continue
+            if (before.isEmpty() || head.isEmpty() || before == head) continue
+            // before = сплошные нули — пуш создал ветку с нуля, сравнивать не с чем.
+            if (before == ZERO_SHA) continue
+
+            byDay.getOrPut(day) { mutableListOf() }.add(GithubPushRef(repo, before, head))
         }
-        // Один и тот же коммит может прийти в нескольких событиях — оставляем уникальные.
-        return byDay.mapValues { (_, list) -> list.distinctBy { it.sha } }
+        return byDay
+    }
+
+    /** Разобрать ответ Compare API в список коммитов (от старого к новому). */
+    fun parseCommitsFromCompare(body: String, repo: String): List<GithubCommit> {
+        val commitsArray = runCatching { json.parseToJsonElement(body).jsonObject["commits"]?.jsonArray }
+            .getOrNull() ?: return emptyList()
+        return commitsArray.mapNotNull { element ->
+            val commitObj = element.jsonObject
+            val sha = commitObj["sha"]?.jsonPrimitive?.content.orEmpty()
+            val message = commitObj["commit"]?.jsonObject?.get("message")?.jsonPrimitive?.content?.trim().orEmpty()
+            if (sha.isEmpty() || message.isEmpty()) null else GithubCommit(repo, message, sha)
+        }
     }
 
     /** Текст записи из коммитов за день — это и есть сырьё, которое дальше разберёт ИИ. */
@@ -138,7 +213,36 @@ object GithubImporter {
         projectId: UUID?,
         token: String? = null,
     ): ImportResult {
-        val byDay = parseCommitsByDay(fetchEvents(login, token), from, to)
+        val pushesByDay = parsePushesByDay(fetchEvents(login, token), from, to)
+
+        val maxCompareCalls = if (token != null) MAX_COMPARE_CALLS_AUTHENTICATED else MAX_COMPARE_CALLS_ANONYMOUS
+        var compareCallsUsed = 0
+        var truncated = false
+        val commitsByDay = sortedMapOf<LocalDate, MutableList<GithubCommit>>()
+
+        outer@ for ((day, pushes) in pushesByDay) {
+            for (push in pushes) {
+                if (compareCallsUsed >= maxCompareCalls) {
+                    truncated = true
+                    break@outer
+                }
+                compareCallsUsed++
+                val commits = try {
+                    parseCommitsFromCompare(fetchCompare(push.repo, push.before, push.head, token), push.repo)
+                } catch (e: GithubRateLimitException) {
+                    truncated = true
+                    break@outer
+                } catch (e: Exception) {
+                    emptyList() // этот конкретный пуш не сравнился — пропускаем, остальные всё равно важны
+                }
+                if (commits.isNotEmpty()) {
+                    commitsByDay.getOrPut(day) { mutableListOf() }.addAll(commits)
+                }
+            }
+        }
+        // Один и тот же коммит может прийти из нескольких пушей (например, повторный push той же ветки).
+        val byDay = commitsByDay.mapValues { (_, list) -> list.distinctBy { it.sha } }
+
         var created = 0
         var skipped = 0
         var commits = 0
@@ -163,6 +267,6 @@ object GithubImporter {
             )
             created++
         }
-        return ImportResult(days = byDay.size, commits = commits, created = created, skipped = skipped)
+        return ImportResult(days = byDay.size, commits = commits, created = created, skipped = skipped, truncated = truncated)
     }
 }

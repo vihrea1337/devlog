@@ -60,7 +60,7 @@ fun Route.importRoutes() = authenticate("auth-jwt") {
                 )
             }
 
-        call.respond(ImportResultDto(result.days, result.commits, result.created, result.skipped))
+        call.respond(ImportResultDto(result.days, result.commits, result.created, result.skipped, result.truncated))
     }
 
     /**

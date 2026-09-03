@@ -241,6 +241,8 @@ data class ImportResultDto(
     val commits: Int,
     val created: Int,
     val skipped: Int,
+    /** Догрузка коммитов остановилась раньше конца периода — упёрлись в лимит запросов. */
+    val truncated: Boolean = false,
 )
 
 /** Тело POST /api/import/text: любой текстовый лог с датами (ГГГГ-ММ-ДД) внутри строк. */

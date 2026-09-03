@@ -41,7 +41,7 @@ object TextImporter {
             val line = rawLine.trim()
             if (line.isEmpty()) continue
             val match = DATE_PATTERN.find(line)?.value
-            val parsedDay = match?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+            val parsedDay = match?.let { parseDateOrNull(it) }
             if (parsedDay != null) currentDay = parsedDay
             val day = currentDay ?: continue
             byDay.getOrPut(day) { mutableListOf() }.add(line)

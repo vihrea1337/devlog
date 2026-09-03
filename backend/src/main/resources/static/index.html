@@ -978,10 +978,11 @@
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) { $('importStatus').textContent = data.error || 'Не вышло (' + res.status + ')'; return; }
-      $('importStatus').textContent = data.commits
+      $('importStatus').textContent = (data.commits
         ? `коммитов: ${data.commits}, записей создано: ${data.created}` +
           (data.skipped ? `, уже было: ${data.skipped}` : '')
-        : 'за этот период публичных коммитов не нашлось';
+        : 'за этот период коммитов не нашлось') +
+        (data.truncated ? ' (упёрлись в лимит запросов к GitHub — часть пушей не проверена, попробуйте период короче)' : '');
       loadEntries();
       loadStats();
     } finally {
