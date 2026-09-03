@@ -42,6 +42,8 @@ _Позже (Фаза 4): `plan`, `ai_quota_used` для тарифов и ли�
 | ai_enabled | boolean, default true | выключатель ИИ (приватность) |
 | archived | boolean, default false | |
 | created_at | timestamptz | |
+| github_export_repo | varchar(200), NULL | "owner/repo" для экспорта отчётов; NULL — экспорт выключен (V7) |
+| github_export_path | varchar(300), NULL | путь до changelog-файла; NULL при непустом repo = docs/devlog.md по умолчанию (V7) |
 
 ## entries — записи (сырьё за день)
 | колонка | тип | заметки |

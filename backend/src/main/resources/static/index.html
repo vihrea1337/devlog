@@ -349,8 +349,10 @@
           <button class="ghost hidden" id="reportRevoke">Отозвать ссылку</button>
           <button class="ghost" id="reportDownload">Скачать .md</button>
           <button class="ghost" id="reportPrint">Печать / PDF</button>
+          <button class="ghost" id="reportExportGithub">Экспортировать в GitHub</button>
         </div>
         <div id="reportLink" class="muted" style="font-size:13px; margin-top:6px;"></div>
+        <div id="reportExportStatus" class="muted" style="font-size:13px; margin-top:6px;"></div>
       </div>
 
       <!-- Ранее собранные отчёты -->
@@ -879,17 +881,55 @@
     if (!projects.length) { box.innerHTML = '<div class="muted" style="font-size:13px;">Пока нет проектов.</div>'; return; }
     box.innerHTML = projects.map(p => {
       const color = p.color || 'var(--muted)';
+      const exportOn = !!p.githubExportRepo;
       return `<div class="proj-row" data-id="${p.id}">
-        <span class="proj"><span class="dot" style="background:${esc(color)}"></span>${esc(p.name)}${p.aiEnabled ? '' : ' <span class="ai-off">ИИ выкл.</span>'}</span>
-        <button class="ghost proj-del">Удалить</button>
+        <span class="proj"><span class="dot" style="background:${esc(color)}"></span>${esc(p.name)}${p.aiEnabled ? '' : ' <span class="ai-off">ИИ выкл.</span>'}${exportOn ? ' <span class="ai-off" style="background:none;">GitHub-экспорт вкл.</span>' : ''}</span>
+        <span>
+          <button class="ghost proj-export-toggle">GitHub-экспорт</button>
+          <button class="ghost proj-del">Удалить</button>
+        </span>
+      </div>
+      <div class="proj-export-form hidden" style="margin:0 0 10px; padding:8px; border:1px solid var(--line); border-radius:8px;">
+        <div class="muted" style="font-size:12px; margin-bottom:6px;">
+          Отчёты этого проекта можно вручную положить в файл в вашем репозитории (по кнопке
+          на отчёте) — рядом с настоящими коммитами появляется человеческое "что и зачем делалось".
+          Нужен привязанный личный токен GitHub (см. панель GitHub) с правом записи в репозиторий.
+        </div>
+        <div class="row">
+          <div style="flex:2;"><label>Репозиторий (owner/repo)</label><input class="proj-export-repo" placeholder="например, vihrea1337/devlog" value="${esc(p.githubExportRepo || '')}"></div>
+          <div style="flex:2;"><label>Путь до файла</label><input class="proj-export-path" placeholder="docs/devlog.md" value="${esc(p.githubExportPath || '')}"></div>
+        </div>
+        <div class="muted" style="font-size:12px; margin-top:4px;">Пустой репозиторий — экспорт выключен. Пустой путь при заданном репозитории — подставится docs/devlog.md.</div>
+        <button class="ghost proj-export-save" style="margin-top:6px;">Сохранить</button>
+        <span class="muted proj-export-status" style="font-size:13px; margin-left:8px;"></span>
       </div>`;
     }).join('');
     box.querySelectorAll('.proj-row').forEach(row => {
+      const id = row.dataset.id;
+      const form = row.nextElementSibling; // .proj-export-form, соседний блок того же проекта
+
       row.querySelector('.proj-del').onclick = async () => {
         if (!confirm('Удалить проект? Записи останутся, но станут «без проекта».')) return;
-        await api('/api/projects/' + row.dataset.id, { method: 'DELETE' });
+        await api('/api/projects/' + id, { method: 'DELETE' });
         await loadProjects();
         loadEntries();
+      };
+
+      row.querySelector('.proj-export-toggle').onclick = () => form.classList.toggle('hidden');
+
+      form.querySelector('.proj-export-save').onclick = async () => {
+        const repo = form.querySelector('.proj-export-repo').value.trim();
+        const path = form.querySelector('.proj-export-path').value.trim();
+        const status = form.querySelector('.proj-export-status');
+        status.textContent = 'Сохраняем…';
+        const res = await api('/api/projects/' + id, {
+          method: 'PUT',
+          body: { githubExportRepo: repo, githubExportPath: path },
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { status.textContent = data.error || 'не вышло'; return; }
+        status.textContent = 'Сохранено';
+        await loadProjects();
       };
     });
   }
@@ -1064,6 +1104,7 @@
     $('reportSave').classList.add('hidden');
     $('reportCancelEdit').classList.add('hidden');
     $('reportEdit').classList.remove('hidden');
+    $('reportExportStatus').textContent = '';
     renderShareState();
   }
 
@@ -1171,6 +1212,23 @@
       + '</style></head><body>' + currentReport.contentHtml
       + '<scr' + 'ipt>window.onload=function(){window.print()}</scr' + 'ipt></body></html>');
     w.document.close();
+  };
+
+  // --- Экспорт отчёта в GitHub (обратная сторона импорта коммитов) ---
+  $('reportExportGithub').onclick = async () => {
+    if (!currentReport) return;
+    const status = $('reportExportStatus');
+    $('reportExportGithub').disabled = true;
+    status.textContent = 'Записываем в GitHub…';
+    try {
+      const res = await api('/api/reports/' + currentReport.id + '/export-github', { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+      status.textContent = res.ok
+        ? `Готово: ${data.repo}/${data.path}`
+        : (data.error || 'Не вышло (' + res.status + ')');
+    } finally {
+      $('reportExportGithub').disabled = false;
+    }
   };
 
   // --- История собранных отчётов ---

@@ -149,13 +149,22 @@ data class EntryEvent(val entryId: String, val status: String)
 @Serializable
 data class NewProject(val name: String, val color: String? = null, val aiEnabled: Boolean = true)
 
-/** Тело PUT /api/projects/{id}: меняем только переданные поля. */
+/**
+ * Тело PUT /api/projects/{id}: меняем только переданные поля.
+ *
+ * githubExportRepo/githubExportPath — как color: null = не трогать, пустая строка = очистить
+ * (отключить экспорт). Формат репозитория — "owner/repo", путь — обычный путь в репозитории
+ * (например "docs/devlog.md"); пустой путь при непустом репозитории означает "путь по умолчанию" —
+ * подставляется на сервере (см. GithubExporter.DEFAULT_EXPORT_PATH).
+ */
 @Serializable
 data class UpdateProject(
     val name: String? = null,
     val color: String? = null,
     val aiEnabled: Boolean? = null,
     val archived: Boolean? = null,
+    val githubExportRepo: String? = null,
+    val githubExportPath: String? = null,
 )
 
 @Serializable
@@ -166,6 +175,11 @@ data class ProjectDto(
     val aiEnabled: Boolean = true,
     val archived: Boolean = false,
     val createdAt: String = "",
+    /** Репозиторий ("owner/repo") для экспорта отчётов; null — экспорт выключен. */
+    val githubExportRepo: String? = null,
+    /** Путь до файла-changelog внутри репозитория; null вместе с непустым githubExportRepo
+     *  означает путь по умолчанию (docs/devlog.md) — конкретное значение решает сервер. */
+    val githubExportPath: String? = null,
 )
 
 // --- Отчёты за период ---
@@ -257,3 +271,9 @@ data class TextImportResultDto(
     val created: Int,
     val skipped: Int,
 )
+
+// --- Экспорт отчёта в GitHub (обратная сторона импорта коммитов) ---
+
+/** Ответ POST /api/reports/{id}/export-github: куда именно записали. */
+@Serializable
+data class ExportGithubResultDto(val repo: String, val path: String)
