@@ -12,6 +12,7 @@ import io.ktor.server.routing.delete
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.put
+import java.time.LocalDate
 import java.util.UUID
 
 // DTO отчётов (NewReport, ReportDto, UpdateReport, ShareResponse) переехали
@@ -67,6 +68,47 @@ fun Route.reportRoutes() {
             val id = call.reportId() ?: return@delete call.badRequest("Некорректный id")
             val removed = ReportRepository.delete(call.userId(), id)
             call.respond(if (removed) HttpStatusCode.NoContent else HttpStatusCode.NotFound)
+        }
+
+        /**
+         * Экспорт отчёта в GitHub — обратная сторона импорта коммитов (см. GithubExporter.kt).
+         * Ручное действие по кнопке, не автоматика: обновляет ОДИН файл-changelog в репозитории
+         * проекта, а не коммитит на каждую запись дневника.
+         */
+        post("/api/reports/{id}/export-github") {
+            val id = call.reportId() ?: return@post call.badRequest("Некорректный id")
+            val report = ReportRepository.getById(call.userId(), id)
+                ?: return@post call.respond(HttpStatusCode.NotFound)
+
+            val project = report.projectId?.let { ProjectRepository.getById(call.userId(), UUID.fromString(it)) }
+            val repo = project?.githubExportRepo?.trim()
+            if (repo.isNullOrBlank()) {
+                return@post call.badRequest(
+                    "У отчёта нет проекта с настроенным экспортом в GitHub — привяжите отчёт к проекту " +
+                        "и укажите репозиторий в его настройках",
+                )
+            }
+            val path = project.githubExportPath?.trim()?.ifBlank { null } ?: GithubExporter.DEFAULT_EXPORT_PATH
+
+            val token = GithubTokenRepository.tokenFor(call.userId())
+                ?: return@post call.badRequest(
+                    "Сначала привяжите личный токен GitHub в настройках — без него нельзя писать в репозиторий",
+                )
+
+            val section = GithubExporter.ExportSection(
+                reportId = report.id,
+                title = report.title,
+                periodStart = LocalDate.parse(report.periodStart),
+                periodEnd = LocalDate.parse(report.periodEnd),
+                markdown = report.contentMd,
+            )
+
+            runCatching { GithubExporter.export(repo, path, token, section) }
+                .onFailure { error ->
+                    call.application.environment.log.info("Экспорт отчёта в GitHub не удался: ${error.message}")
+                    call.respond(HttpStatusCode.BadGateway, ErrorResponse(error.message ?: "Не удалось записать в GitHub"))
+                }
+                .onSuccess { call.respond(ExportGithubResultDto(repo, path)) }
         }
 
         // Включить публичную ссылку (для работодателя): выдаём/переиспользуем share-токен.

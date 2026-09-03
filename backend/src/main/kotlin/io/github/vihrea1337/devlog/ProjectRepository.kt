@@ -57,11 +57,15 @@ object ProjectRepository {
         val newColor = body.color
         val newAiEnabled = body.aiEnabled
         val newArchived = body.archived
+        val newExportRepo = body.githubExportRepo
+        val newExportPath = body.githubExportPath
         val changed = Projects.update({ (Projects.id eq id) and (Projects.userId eq userId) }) {
             if (newName != null) it[name] = newName.trim()
             if (newColor != null) it[color] = newColor.trim().ifBlank { null }
             if (newAiEnabled != null) it[aiEnabled] = newAiEnabled
             if (newArchived != null) it[archived] = newArchived
+            if (newExportRepo != null) it[githubExportRepo] = newExportRepo.trim().ifBlank { null }
+            if (newExportPath != null) it[githubExportPath] = newExportPath.trim().ifBlank { null }
         }
         if (changed == 0) null else findInTx(userId, id)
     }
@@ -97,5 +101,7 @@ object ProjectRepository {
         aiEnabled = this[Projects.aiEnabled],
         archived = this[Projects.archived],
         createdAt = this[Projects.createdAt].toString(),
+        githubExportRepo = this[Projects.githubExportRepo],
+        githubExportPath = this[Projects.githubExportPath],
     )
 }

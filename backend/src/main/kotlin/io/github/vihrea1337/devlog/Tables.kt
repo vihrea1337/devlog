@@ -55,6 +55,10 @@ object Projects : Table("projects") {
     val aiEnabled = bool("ai_enabled").default(true)
     val archived = bool("archived").default(false)
     val createdAt = timestamp("created_at")
+    // Экспорт отчётов проекта в GitHub (см. GithubExporter.kt): "owner/repo" и путь до файла
+    // внутри него. Оба nullable — по умолчанию экспорт выключен, включается в настройках проекта.
+    val githubExportRepo = varchar("github_export_repo", 200).nullable()
+    val githubExportPath = varchar("github_export_path", 300).nullable()
     override val primaryKey = PrimaryKey(id)
 }
 
