@@ -3,6 +3,7 @@ package io.github.vihrea1337.devlog.sync
 import io.github.vihrea1337.devlog.EntryChangesDto
 import io.github.vihrea1337.devlog.EntryDto
 import io.github.vihrea1337.devlog.NewEntry
+import io.github.vihrea1337.devlog.UpdateEntry
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.engine.HttpClientEngine
@@ -13,6 +14,7 @@ import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.parameter
 import io.ktor.client.request.post
+import io.ktor.client.request.put
 import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
@@ -66,6 +68,20 @@ class DevLogSyncClient(
             contentType(ContentType.Application.Json)
             tokenProvider()?.let { header(HttpHeaders.Authorization, "Bearer $it") }
             setBody(newEntry)
+        }.body()
+    }
+
+    /**
+     * PUT /api/entries/{id} — правка текста офлайн-очередью (см. EntryRepository.enqueueUpdate).
+     * Сервер сам ставит запись обратно в очередь на ИИ-обработку при смене текста — здесь
+     * просто отдаём то, что он ответил (уже с новым статусом).
+     */
+    suspend fun updateEntry(id: String, rawText: String): EntryDto {
+        val base = baseUrl.trimEnd('/')
+        return http.put("$base/api/entries/$id") {
+            contentType(ContentType.Application.Json)
+            tokenProvider()?.let { header(HttpHeaders.Authorization, "Bearer $it") }
+            setBody(UpdateEntry(rawText = rawText))
         }.body()
     }
 

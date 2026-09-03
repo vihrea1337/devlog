@@ -136,6 +136,24 @@ class FeedViewModel : ViewModel() {
     }
 
     /**
+     * Поправить текст записи — офлайн-first, как и добавление: правка сразу видна в ленте
+     * (подписка в init перерисует карточку), реальный PUT уходит в очередь и уезжает при
+     * ближайшем sync(). Конфликт с сервером (если запись параллельно поменялась с другого
+     * устройства или ИИ успел её переобработать раньше нашей отправки) разрешается внутри
+     * EntryRepository по updatedAt — экрану об этом думать не нужно.
+     */
+    fun editEntry(id: String, rawText: String) {
+        if (rawText.isBlank()) {
+            _state.update { it.copy(error = "Текст записи не может быть пустым") }
+            return
+        }
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { repository.enqueueUpdate(id, rawText.trim()) }
+            refresh()
+        }
+    }
+
+    /**
      * Удалить запись по id — тоже офлайн-first: пропадает из кэша (и из ленты) сразу,
      * реальный DELETE уходит на сервер в очереди при ближайшем refresh()/sync().
      */

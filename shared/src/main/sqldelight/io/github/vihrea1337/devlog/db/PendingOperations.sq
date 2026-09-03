@@ -7,10 +7,11 @@ CREATE TABLE pendingOperation (
     -- в теории могло быть несколько операций подряд без конфликта первичных ключей.
     id TEXT NOT NULL PRIMARY KEY,
     entryId TEXT NOT NULL,
-    -- "create" | "delete". Что-то среднее вроде "update" не заводим — этой задачей
-    -- офлайн-редактирование текста записи не требовалось, только добавление/удаление.
+    -- "create" | "update" | "delete".
     type TEXT NOT NULL,
-    -- Сериализованный NewEntry для type = "create"; null для "delete" (там нечего слать, кроме id).
+    -- Сериализованный NewEntry для type = "create"; для "update" — просто новый текст записи
+    -- как есть (не JSON, там всего одно строковое поле — оборачивать в объект незачем);
+    -- null для "delete" (там нечего слать, кроме id).
     payloadJson TEXT,
     createdAtMillis INTEGER NOT NULL,
     attempts INTEGER NOT NULL DEFAULT 0,

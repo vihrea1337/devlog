@@ -61,6 +61,9 @@ class EntryRepositoryPendingQueueTest {
     private fun isDeleteRequest(request: HttpRequestData) =
         request.method == HttpMethod.Delete && request.url.encodedPath.contains("/entries/")
 
+    private fun isUpdateRequest(request: HttpRequestData) =
+        request.method == HttpMethod.Put && request.url.encodedPath.contains("/entries/")
+
     private fun newEntry(id: String) = NewEntry(occurredOn = "2026-09-02", rawText = "офлайн текст", id = id)
 
     @Test
@@ -285,6 +288,223 @@ class EntryRepositoryPendingQueueTest {
         assertEquals(1, createCalls)
         assertEquals(1, deleteCalls)
         assertEquals(0, db.entriesQueries.selectAll().executeAsList().size)
+        assertEquals(0, db.pendingOperationsQueries.countPending().executeAsOne())
+    }
+
+    @Test
+    fun `enqueueUpdate сразу меняет текст в кэше ещё до сети`() = runTest {
+        val db = newDatabase()
+        val client = DevLogSyncClient("http://localhost", { null }, MockEngine { noChanges() })
+        val repo = EntryRepository(db, client)
+        db.entriesQueries.upsert(
+            id = "server-1", projectId = null, occurredOn = "2026-09-01", rawText = "старый текст",
+            source = "manual", status = "structured", timeSpentMin = null,
+            createdAt = "2026-09-01T00:00:00Z", updatedAt = "2026-09-01T00:00:00Z",
+            structuredJson = null, aiError = null,
+        )
+
+        repo.enqueueUpdate("server-1", "новый текст")
+
+        val cached = db.entriesQueries.selectAll().executeAsList().single()
+        assertEquals("новый текст", cached.rawText)
+        assertEquals("queued", cached.status, "правка снова ставит запись в очередь на ИИ, как и на сервере")
+        assertEquals(1, db.pendingOperationsQueries.countPending().executeAsOne())
+    }
+
+    @Test
+    fun `enqueueUpdate по несуществующему id ничего не делает`() = runTest {
+        val db = newDatabase()
+        val client = DevLogSyncClient("http://localhost", { null }, MockEngine { noChanges() })
+        val repo = EntryRepository(db, client)
+
+        repo.enqueueUpdate("нет-такой-записи", "текст")
+
+        assertEquals(0, db.entriesQueries.selectAll().executeAsList().size)
+        assertEquals(0, db.pendingOperationsQueries.countPending().executeAsOne())
+    }
+
+    @Test
+    fun `sync отправляет отложенную правку и снимает её с очереди`() = runTest {
+        var updateCalls = 0
+        val db = newDatabase()
+        val client = DevLogSyncClient(
+            "http://localhost",
+            { null },
+            MockEngine { request ->
+                when {
+                    isUpdateRequest(request) -> {
+                        updateCalls++
+                        entryCreated(
+                            EntryDto(
+                                id = "server-1",
+                                occurredOn = "2026-09-01",
+                                rawText = "новый текст",
+                                status = "queued",
+                                createdAt = "2026-09-01T00:00:00Z",
+                                updatedAt = "2026-09-02T00:00:00Z",
+                            ),
+                        )
+                    }
+                    isChangesRequest(request) -> noChanges()
+                    else -> error("неожиданный запрос: ${request.method} ${request.url}")
+                }
+            },
+        )
+        val repo = EntryRepository(db, client)
+        db.entriesQueries.upsert(
+            id = "server-1", projectId = null, occurredOn = "2026-09-01", rawText = "старый текст",
+            source = "manual", status = "structured", timeSpentMin = null,
+            createdAt = "2026-09-01T00:00:00Z", updatedAt = "2026-09-01T00:00:00Z",
+            structuredJson = null, aiError = null,
+        )
+        repo.enqueueUpdate("server-1", "новый текст")
+
+        repo.sync()
+
+        assertEquals(1, updateCalls)
+        assertEquals(0, db.pendingOperationsQueries.countPending().executeAsOne())
+        assertEquals("новый текст", db.entriesQueries.selectAll().executeAsList().single().rawText)
+    }
+
+    @Test
+    fun `правка ещё не отправленной новой записи меняет payload create, а не шлёт отдельный PUT`() = runTest {
+        val db = newDatabase()
+        val client = DevLogSyncClient(
+            "http://localhost",
+            { null },
+            MockEngine { request -> error("сеть не должна была понадобиться: ${request.method} ${request.url}") },
+        )
+        val repo = EntryRepository(db, client)
+
+        repo.enqueueCreate(newEntry("local-1"))
+        repo.enqueueUpdate("local-1", "исправленный текст")
+
+        assertEquals(1, db.pendingOperationsQueries.countPending().executeAsOne(), "по-прежнему одна операция — CREATE с уже поправленным текстом")
+        assertEquals("исправленный текст", db.entriesQueries.selectAll().executeAsList().single().rawText)
+    }
+
+    @Test
+    fun `повторная правка ещё не отправленной правки не плодит вторую UPDATE-операцию`() = runTest {
+        val db = newDatabase()
+        val client = DevLogSyncClient("http://localhost", { null }, MockEngine { noChanges() })
+        val repo = EntryRepository(db, client)
+        db.entriesQueries.upsert(
+            id = "server-1", projectId = null, occurredOn = "2026-09-01", rawText = "текст 1",
+            source = "manual", status = "structured", timeSpentMin = null,
+            createdAt = "2026-09-01T00:00:00Z", updatedAt = "2026-09-01T00:00:00Z",
+            structuredJson = null, aiError = null,
+        )
+
+        repo.enqueueUpdate("server-1", "текст 2")
+        repo.enqueueUpdate("server-1", "текст 3")
+
+        assertEquals(1, db.pendingOperationsQueries.countPending().executeAsOne())
+        assertEquals("текст 3", db.entriesQueries.selectAll().executeAsList().single().rawText)
+    }
+
+    @Test
+    fun `удаление отменяет ещё не отправленную правку текста той же записи`() = runTest {
+        var updateCalls = 0
+        var deleteCalls = 0
+        val db = newDatabase()
+        val client = DevLogSyncClient(
+            "http://localhost",
+            { null },
+            MockEngine { request ->
+                when {
+                    isUpdateRequest(request) -> { updateCalls++; error("PUT не должен был уйти — запись удалена раньше") }
+                    isDeleteRequest(request) -> { deleteCalls++; respond("", status = HttpStatusCode.NoContent) }
+                    isChangesRequest(request) -> noChanges()
+                    else -> error("неожиданный запрос: ${request.method} ${request.url}")
+                }
+            },
+        )
+        val repo = EntryRepository(db, client)
+        db.entriesQueries.upsert(
+            id = "server-1", projectId = null, occurredOn = "2026-09-01", rawText = "текст",
+            source = "manual", status = "structured", timeSpentMin = null,
+            createdAt = "2026-09-01T00:00:00Z", updatedAt = "2026-09-01T00:00:00Z",
+            structuredJson = null, aiError = null,
+        )
+
+        repo.enqueueUpdate("server-1", "правка, которая не уедет")
+        repo.enqueueDelete("server-1")
+        repo.sync()
+
+        assertEquals(0, updateCalls)
+        assertEquals(1, deleteCalls)
+        assertEquals(0, db.pendingOperationsQueries.countPending().executeAsOne())
+    }
+
+    @Test
+    fun `повторная правка, пока предыдущая уже в полёте, не теряется после ответа на старую`() = runTest {
+        val db = newDatabase()
+        val proceedWithFirstUpdateResponse = CompletableDeferred<Unit>()
+        var updateCalls = 0
+        val client = DevLogSyncClient(
+            "http://localhost",
+            { null },
+            MockEngine { request ->
+                when {
+                    isUpdateRequest(request) -> {
+                        updateCalls++
+                        val callNumber = updateCalls
+                        if (callNumber == 1) {
+                            // Первый вызов застревает — имитируем "запрос ушёл, ответа ещё
+                            // нет", пока пользователь успевает поправить текст ещё раз.
+                            proceedWithFirstUpdateResponse.await()
+                        }
+                        // Сервер отвечает тем же текстом, что реально пришёл в этом запросе
+                        // (первый запрос всё ещё нёс "текст 2" — его отправили ДО второй правки).
+                        val sentText = if (callNumber == 1) "текст 2" else "текст 3"
+                        entryCreated(
+                            EntryDto(
+                                id = "server-1",
+                                occurredOn = "2026-09-01",
+                                rawText = sentText,
+                                status = "queued",
+                                createdAt = "2026-09-01T00:00:00Z",
+                                updatedAt = "2026-09-0${1 + callNumber}T00:00:00Z",
+                            ),
+                        )
+                    }
+                    isChangesRequest(request) -> noChanges()
+                    else -> error("неожиданный запрос: ${request.method} ${request.url}")
+                }
+            },
+        )
+        val repo = EntryRepository(db, client)
+        db.entriesQueries.upsert(
+            id = "server-1", projectId = null, occurredOn = "2026-09-01", rawText = "текст 1",
+            source = "manual", status = "structured", timeSpentMin = null,
+            createdAt = "2026-09-01T00:00:00Z", updatedAt = "2026-09-01T00:00:00Z",
+            structuredJson = null, aiError = null,
+        )
+        repo.enqueueUpdate("server-1", "текст 2")
+
+        val syncJob = launch { repo.sync() }
+        runCurrent() // довести sync() до сетевого PUT, где он застрянет на await()
+
+        // Пользователь правит текст ещё раз, пока первый PUT уже улетел на сервер.
+        repo.enqueueUpdate("server-1", "текст 3")
+        assertEquals(
+            2, db.pendingOperationsQueries.countPending().executeAsOne(),
+            "правка во время in-flight правки — это ОТДЕЛЬНАЯ операция, а не правка той же строки очереди",
+        )
+
+        proceedWithFirstUpdateResponse.complete(Unit)
+        syncJob.join()
+
+        // Ответ на первый (устаревший) запрос применился и на секунду откатил текст назад —
+        // та же плата за отсутствие протокола отмены in-flight запроса, что и у create/delete
+        // (см. EntryRepository.inFlightUpdateEntryIds) — но вторая правка НЕ потеряна:
+        // она всё ещё в очереди и уедет следующим sync().
+        assertEquals(1, db.pendingOperationsQueries.countPending().executeAsOne())
+
+        repo.sync()
+
+        assertEquals(2, updateCalls)
+        assertEquals("текст 3", db.entriesQueries.selectAll().executeAsList().single().rawText)
         assertEquals(0, db.pendingOperationsQueries.countPending().executeAsOne())
     }
 

@@ -136,6 +136,7 @@ fun FeedScreen(vm: FeedViewModel = viewModel()) {
                         project = state.projectOf(e.projectId),
                         onDelete = { vm.deleteEntry(e.id) },
                         onReprocess = { vm.reprocess(e.id) },
+                        onEdit = { newText -> vm.editEntry(e.id, newText) },
                     )
                 }
             }
@@ -150,52 +151,82 @@ private fun EntryCard(
     project: ProjectDto?,
     onDelete: () -> Unit,
     onReprocess: () -> Unit,
+    onEdit: (String) -> Unit,
 ) {
+    // Правка прямо в карточке, как на вебе: отдельного экрана редактирования не заводим.
+    var isEditing by remember(entry.id) { mutableStateOf(false) }
+    var draft by remember(entry.id) { mutableStateOf(entry.rawText) }
+
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp)) {
-            Row(verticalAlignment = Alignment.Top) {
-                Text(entry.rawText, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-                Spacer(Modifier.height(0.dp))
-                StatusBadge(entry.status)
-            }
-            // Причина неудачи ИИ: «ошибка ИИ» без объяснения ничем не помогает.
-            entry.aiError?.let { reason ->
-                Text(
-                    reason,
-                    color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.padding(top = 6.dp),
+            if (isEditing) {
+                OutlinedTextField(
+                    value = draft,
+                    onValueChange = { draft = it },
+                    minLines = 2,
+                    modifier = Modifier.fillMaxWidth(),
                 )
-            }
-            project?.let {
-                Text(
-                    if (it.aiEnabled) it.name else "${it.name} · ИИ выкл.",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Color(0xFF6B7382),
-                    modifier = Modifier.padding(top = 6.dp),
-                )
-            }
-            entry.structured?.let { s ->
-                Spacer(Modifier.height(8.dp))
-                if (s.summary.isNotBlank()) {
-                    Text(s.summary, style = MaterialTheme.typography.titleSmall)
+                Row(Modifier.padding(top = 4.dp)) {
+                    TextButton(
+                        onClick = {
+                            onEdit(draft)
+                            isEditing = false
+                        },
+                        enabled = draft.isNotBlank(),
+                    ) { Text("Сохранить") }
+                    TextButton(
+                        onClick = {
+                            draft = entry.rawText
+                            isEditing = false
+                        },
+                    ) { Text("Отмена") }
                 }
-                s.steps.forEach { Text("• $it", style = MaterialTheme.typography.bodySmall) }
-                if (s.outcome.isNotBlank()) {
-                    Text("Итог: ${s.outcome}", style = MaterialTheme.typography.bodySmall)
+            } else {
+                Row(verticalAlignment = Alignment.Top) {
+                    Text(entry.rawText, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                    Spacer(Modifier.height(0.dp))
+                    StatusBadge(entry.status)
                 }
-                if (s.tags.isNotEmpty()) {
+                // Причина неудачи ИИ: «ошибка ИИ» без объяснения ничем не помогает.
+                entry.aiError?.let { reason ->
                     Text(
-                        s.tags.joinToString(" ") { "#$it" },
+                        reason,
+                        color = MaterialTheme.colorScheme.error,
                         style = MaterialTheme.typography.bodySmall,
-                        color = Color(0xFF3B6EF5),
+                        modifier = Modifier.padding(top = 6.dp),
                     )
                 }
-            }
-            Spacer(Modifier.height(4.dp))
-            Row {
-                TextButton(onClick = onReprocess) { Text("Переобработать") }
-                TextButton(onClick = onDelete) { Text("Удалить") }
+                project?.let {
+                    Text(
+                        if (it.aiEnabled) it.name else "${it.name} · ИИ выкл.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color(0xFF6B7382),
+                        modifier = Modifier.padding(top = 6.dp),
+                    )
+                }
+                entry.structured?.let { s ->
+                    Spacer(Modifier.height(8.dp))
+                    if (s.summary.isNotBlank()) {
+                        Text(s.summary, style = MaterialTheme.typography.titleSmall)
+                    }
+                    s.steps.forEach { Text("• $it", style = MaterialTheme.typography.bodySmall) }
+                    if (s.outcome.isNotBlank()) {
+                        Text("Итог: ${s.outcome}", style = MaterialTheme.typography.bodySmall)
+                    }
+                    if (s.tags.isNotEmpty()) {
+                        Text(
+                            s.tags.joinToString(" ") { "#$it" },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color(0xFF3B6EF5),
+                        )
+                    }
+                }
+                Spacer(Modifier.height(4.dp))
+                Row {
+                    TextButton(onClick = { draft = entry.rawText; isEditing = true }) { Text("Править") }
+                    TextButton(onClick = onReprocess) { Text("Переобработать") }
+                    TextButton(onClick = onDelete) { Text("Удалить") }
+                }
             }
         }
     }

@@ -93,6 +93,92 @@ class EntryRepositorySyncTest {
     }
 
     @Test
+    fun `неотправленная правка новее серверной версии — остаётся в кэше, сервер не затирает её`() = runTest {
+        val engine = MockEngine {
+            // Сервер отдаёт СТАРУЮ версию (например, устаревшую переобработку ИИ) — наша
+            // ещё не отправленная правка текста новее.
+            respondWith(
+                EntryChangesDto(
+                    listOf(entry("e1").copy(rawText = "старый серверный текст", updatedAt = "2026-09-01T00:00:00Z")),
+                    serverTime = "t1",
+                    hasMore = false,
+                ),
+            )
+        }
+        val db = newDatabase()
+        val repo = EntryRepository(db, DevLogSyncClient("http://localhost", { null }, engine))
+        db.entriesQueries.upsert(
+            id = "e1", projectId = null, occurredOn = "2026-09-01", rawText = "наша свежая правка",
+            source = "manual", status = "queued", timeSpentMin = null,
+            createdAt = "2026-09-01T00:00:00Z", updatedAt = "2026-09-02T00:00:00Z",
+            structuredJson = null, aiError = null,
+        )
+        db.pendingOperationsQueries.insertOperation(
+            id = "op-1", entryId = "e1", type = "update", payloadJson = "наша свежая правка",
+            createdAtMillis = 1, attempts = 0, nextAttemptAtMillis = 0,
+        )
+
+        repo.sync()
+
+        assertEquals("наша свежая правка", db.entriesQueries.selectAll().executeAsList().single().rawText)
+        assertEquals(1, db.pendingOperationsQueries.countPending().executeAsOne(), "правка всё ещё в очереди — отправится сама следующим sync()")
+    }
+
+    @Test
+    fun `серверная версия новее неотправленной правки — сервер побеждает, устаревшая правка выкидывается из очереди`() = runTest {
+        val engine = MockEngine {
+            respondWith(
+                EntryChangesDto(
+                    listOf(entry("e1").copy(rawText = "версия с другого устройства", updatedAt = "2026-09-03T00:00:00Z")),
+                    serverTime = "t1",
+                    hasMore = false,
+                ),
+            )
+        }
+        val db = newDatabase()
+        val repo = EntryRepository(db, DevLogSyncClient("http://localhost", { null }, engine))
+        db.entriesQueries.upsert(
+            id = "e1", projectId = null, occurredOn = "2026-09-01", rawText = "наша устаревшая правка",
+            source = "manual", status = "queued", timeSpentMin = null,
+            createdAt = "2026-09-01T00:00:00Z", updatedAt = "2026-09-01T00:00:00Z",
+            structuredJson = null, aiError = null,
+        )
+        db.pendingOperationsQueries.insertOperation(
+            id = "op-1", entryId = "e1", type = "update", payloadJson = "наша устаревшая правка",
+            createdAtMillis = 1, attempts = 0, nextAttemptAtMillis = 0,
+        )
+
+        repo.sync()
+
+        assertEquals("версия с другого устройства", db.entriesQueries.selectAll().executeAsList().single().rawText)
+        assertEquals(0, db.pendingOperationsQueries.countPending().executeAsOne(), "устаревшую правку незачем слать дальше — она бы затёрла более новые данные")
+    }
+
+    @Test
+    fun `запись удалена с сервера — неотправленная правка её текста отменяется вместе с ней`() = runTest {
+        val engine = MockEngine {
+            respondWith(EntryChangesDto(listOf(entry("e1", deleted = true)), serverTime = "t1", hasMore = false))
+        }
+        val db = newDatabase()
+        val repo = EntryRepository(db, DevLogSyncClient("http://localhost", { null }, engine))
+        db.entriesQueries.upsert(
+            id = "e1", projectId = null, occurredOn = "2026-09-01", rawText = "правка на удалённую запись",
+            source = "manual", status = "queued", timeSpentMin = null,
+            createdAt = "2026-09-01T00:00:00Z", updatedAt = "2026-09-01T00:00:00Z",
+            structuredJson = null, aiError = null,
+        )
+        db.pendingOperationsQueries.insertOperation(
+            id = "op-1", entryId = "e1", type = "update", payloadJson = "правка на удалённую запись",
+            createdAtMillis = 1, attempts = 0, nextAttemptAtMillis = 0,
+        )
+
+        repo.sync()
+
+        assertEquals(0, db.entriesQueries.selectAll().executeAsList().size)
+        assertEquals(0, db.pendingOperationsQueries.countPending().executeAsOne(), "слать PUT на удалённую запись незачем — она бы вечно получала 404")
+    }
+
+    @Test
     fun `clearLocalData стирает и записи, и курсор синхронизации`() = runTest {
         val engine = MockEngine {
             respondWith(EntryChangesDto(listOf(entry("e1")), serverTime = "t1", hasMore = false))
