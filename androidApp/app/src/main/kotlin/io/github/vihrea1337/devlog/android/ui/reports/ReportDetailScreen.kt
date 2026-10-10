@@ -106,7 +106,7 @@ fun ReportDetailScreen(onBack: () -> Unit, vm: ReportDetailViewModel = hiltViewM
                     }
                 },
                 actions = {
-                    if (report != null && !state.isEditing) {
+                    if (report != null && !state.isEditing && !state.readOnly) {
                         IconButton(onClick = vm::startEdit) { Icon(Icons.Outlined.Edit, contentDescription = "Править") }
                         Box {
                             IconButton(onClick = { menuOpen = true }) { Icon(Icons.Outlined.MoreVert, contentDescription = "Ещё") }
@@ -135,7 +135,8 @@ fun ReportDetailScreen(onBack: () -> Unit, vm: ReportDetailViewModel = hiltViewM
             )
         },
         bottomBar = {
-            if (report != null && !state.isEditing) {
+            // В демо-режиме ссылку выдать нельзя, а уже выданной — поделиться можно.
+            if (report != null && !state.isEditing && (!state.readOnly || state.shareUrl != null)) {
                 BottomAppBar {
                     Column(Modifier.weight(1f).padding(start = 8.dp)) {
                         Text("${humanDate(report.periodStart)} — ${humanDate(report.periodEnd)}", style = MaterialTheme.typography.labelLarge)

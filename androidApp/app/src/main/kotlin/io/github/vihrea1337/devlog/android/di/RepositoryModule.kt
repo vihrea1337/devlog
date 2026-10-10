@@ -10,6 +10,8 @@ import io.github.vihrea1337.devlog.android.data.ProfileRepository
 import io.github.vihrea1337.devlog.android.data.ProfileRepositoryImpl
 import io.github.vihrea1337.devlog.android.data.ProjectsRepository
 import io.github.vihrea1337.devlog.android.data.ProjectsRepositoryImpl
+import io.github.vihrea1337.devlog.android.data.SessionInfo
+import io.github.vihrea1337.devlog.android.data.SessionStore
 import io.github.vihrea1337.devlog.android.data.ReportsRepository
 import io.github.vihrea1337.devlog.android.data.ReportsRepositoryImpl
 
@@ -25,4 +27,5 @@ abstract class RepositoryModule {
     @Binds abstract fun projects(impl: ProjectsRepositoryImpl): ProjectsRepository
     @Binds abstract fun reports(impl: ReportsRepositoryImpl): ReportsRepository
     @Binds abstract fun profile(impl: ProfileRepositoryImpl): ProfileRepository
+    @Binds abstract fun session(impl: SessionStore): SessionInfo
 }

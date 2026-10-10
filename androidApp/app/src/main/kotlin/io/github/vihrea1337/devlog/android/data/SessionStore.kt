@@ -8,8 +8,16 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
-/** Кто вошёл: JWT-токен и имя для шапки. */
-data class Session(val token: String, val displayName: String)
+/**
+ * Только то, что нужно экранам: вошли ли «только для просмотра» (демо-кнопка).
+ * Интерфейс, а не сам SessionStore, — чтобы в юнит-тестах ViewModel подставить простой объект.
+ */
+interface SessionInfo {
+    val readOnly: Boolean
+}
+
+/** Кто вошёл: JWT-токен, имя для шапки и демо-режим «только просмотр». */
+data class Session(val token: String, val displayName: String, val readOnly: Boolean = false)
 
 /**
  * Хранит сессию (JWT-токен и имя пользователя).
@@ -27,7 +35,7 @@ data class Session(val token: String, val displayName: String)
  * сессия пропадает — и при нажатии «Выйти», и когда сервер ответил 401 (токен истёк).
  */
 @Singleton
-class SessionStore @Inject constructor(@ApplicationContext context: Context) {
+class SessionStore @Inject constructor(@ApplicationContext context: Context) : SessionInfo {
     private val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
     private val _session = MutableStateFlow(load())
@@ -36,19 +44,22 @@ class SessionStore @Inject constructor(@ApplicationContext context: Context) {
     /** Токен для заголовка Authorization (читается из перехватчика OkHttp). */
     val token: String? get() = _session.value?.token
 
-    fun save(token: String, displayName: String) {
-        prefs.edit().putString(KEY_TOKEN, token).putString(KEY_NAME, displayName).apply()
-        _session.value = Session(token, displayName)
+    fun save(token: String, displayName: String, readOnly: Boolean = false) {
+        prefs.edit().putString(KEY_TOKEN, token).putString(KEY_NAME, displayName).putBoolean(KEY_RO, readOnly).apply()
+        _session.value = Session(token, displayName, readOnly)
     }
 
+    /** Демо-вход: смотреть можно, менять нельзя — экраны прячут кнопки изменений. */
+    override val readOnly: Boolean get() = _session.value?.readOnly == true
+
     fun clear() {
-        prefs.edit().remove(KEY_TOKEN).remove(KEY_NAME).apply()
+        prefs.edit().remove(KEY_TOKEN).remove(KEY_NAME).remove(KEY_RO).apply()
         _session.value = null
     }
 
     private fun load(): Session? {
         val token = prefs.getString(KEY_TOKEN, null) ?: return null
-        return Session(token, prefs.getString(KEY_NAME, null).orEmpty())
+        return Session(token, prefs.getString(KEY_NAME, null).orEmpty(), prefs.getBoolean(KEY_RO, false))
     }
 
     private companion object {
@@ -57,5 +68,6 @@ class SessionStore @Inject constructor(@ApplicationContext context: Context) {
         const val PREFS = "devlog_prefs"
         const val KEY_TOKEN = "token"
         const val KEY_NAME = "name"
+        const val KEY_RO = "read_only"
     }
 }

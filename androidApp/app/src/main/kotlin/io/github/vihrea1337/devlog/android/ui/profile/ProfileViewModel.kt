@@ -14,6 +14,11 @@ import io.github.vihrea1337.devlog.android.reminder.ReminderScheduler
 import io.github.vihrea1337.devlog.android.reminder.ReminderSettings
 import io.github.vihrea1337.devlog.android.sync.SyncScheduler
 import io.github.vihrea1337.devlog.android.ui.common.humanMessage
+import io.github.vihrea1337.devlog.android.data.SessionInfo
+import io.github.vihrea1337.devlog.sync.EntryRepository
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
 import java.time.LocalDate
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -31,6 +36,9 @@ enum class ImportPeriod(val label: String, val days: Long) {
     QUARTER("3 месяца", 90),
 }
 
+/** Доля проекта во времени: имя, цвет, минуты. */
+data class ProjectShare(val name: String, val color: String?, val minutes: Int)
+
 data class ProfileUiState(
     val user: UserDto? = null,
     val stats: ActivityStatsDto? = null,
@@ -43,6 +51,11 @@ data class ProfileUiState(
     val isImporting: Boolean = false,
     val importResult: ImportResultDto? = null,
     val error: String? = null,
+    /** Куда уходит время: часы по проектам (все записи с указанным временем). */
+    val shares: List<ProjectShare> = emptyList(),
+    /** Частые темы — теги от ИИ по всем записям. */
+    val topTags: List<Pair<String, Int>> = emptyList(),
+    val readOnly: Boolean = false,
 )
 
 @HiltViewModel
@@ -52,9 +65,11 @@ class ProfileViewModel @Inject constructor(
     private val auth: AuthRepository,
     private val syncScheduler: SyncScheduler,
     private val reminders: ReminderScheduler,
+    private val entries: EntryRepository,
+    session: SessionInfo,
 ) : ViewModel() {
 
-    private val _state = MutableStateFlow(ProfileUiState())
+    private val _state = MutableStateFlow(ProfileUiState(readOnly = session.readOnly))
     val state: StateFlow<ProfileUiState> = _state.asStateFlow()
 
     /** Настройки напоминания прямо из DataStore: переключатель всегда показывает правду. */
@@ -68,11 +83,27 @@ class ProfileViewModel @Inject constructor(
                 val user = profile.me()
                 val stats = profile.activity()
                 val projects = runCatching { projectsRepo.projects() }.getOrDefault(emptyList())
+                // Разбивка по проектам и темам — по локальному кэшу записей (работает и без сети).
+                val all = withContext(Dispatchers.IO) { entries.entries().first() }
+                val byProject = projects.associateBy { it.id }
+                val shares = all.filter { (it.timeSpentMin ?: 0) > 0 }
+                    .groupBy { it.projectId }
+                    .map { (pid, list) ->
+                        val p = pid?.let { byProject[it] }
+                        ProjectShare(p?.name ?: "Без проекта", p?.color, list.sumOf { it.timeSpentMin ?: 0 })
+                    }
+                    .sortedByDescending { it.minutes }
+                val topTags = all.flatMap { it.structured?.tags.orEmpty() }
+                    .map { it.trim().lowercase() }.filter { it.isNotEmpty() }
+                    .groupingBy { it }.eachCount()
+                    .entries.sortedByDescending { it.value }.take(10).map { it.key to it.value }
                 _state.update {
                     it.copy(
                         user = user,
                         stats = stats,
                         projects = projects,
+                        shares = shares,
+                        topTags = topTags,
                         isLoading = false,
                         // Поле логина заполняем один раз, чтобы не затирать то, что человек уже печатает.
                         githubLogin = it.githubLogin.ifEmpty { user.githubLogin.orEmpty() },

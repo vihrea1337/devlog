@@ -63,6 +63,8 @@ data class LoginUiState(
     val displayName: String = "",
     val isBusy: Boolean = false,
     val error: String? = null,
+    /** Сервер разрешает демо-вход — показываем кнопку «Открыть демо». */
+    val demoAvailable: Boolean = false,
 ) {
     /** Кнопка активна, только когда есть что отправлять (и не идёт запрос). */
     val canSubmit: Boolean get() = !isBusy && email.isNotBlank() && password.isNotBlank()
@@ -76,6 +78,27 @@ data class LoginUiState(
 class LoginViewModel @Inject constructor(private val auth: AuthRepository) : ViewModel() {
     private val _state = MutableStateFlow(LoginUiState())
     val state: StateFlow<LoginUiState> = _state.asStateFlow()
+
+    init {
+        // Кнопку демо показываем, только если сервер её разрешил (на время показа работодателю).
+        viewModelScope.launch {
+            val available = auth.demoAvailable()
+            _state.update { it.copy(demoAvailable = available) }
+        }
+    }
+
+    /** Войти в демо-аккаунт «только для просмотра» — без регистрации. */
+    fun demoLogin() {
+        viewModelScope.launch {
+            _state.update { it.copy(isBusy = true, error = null) }
+            try {
+                auth.demoLogin()
+                _state.update { it.copy(isBusy = false) }
+            } catch (e: Exception) {
+                _state.update { it.copy(isBusy = false, error = e.humanMessage()) }
+            }
+        }
+    }
 
     fun setEmail(v: String) = _state.update { it.copy(email = v, error = null) }
     fun setPassword(v: String) = _state.update { it.copy(password = v, error = null) }
@@ -140,6 +163,29 @@ fun LoginScreen(vm: LoginViewModel = hiltViewModel()) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(4.dp))
+
+            // Демо без регистрации: готовый дневник с отчётами, только просмотр.
+            if (state.demoAvailable && !state.isRegister) {
+                Surface(
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text(
+                            "Посмотреть без регистрации: готовый дневник разработчика с отчётами.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        )
+                        Button(onClick = vm::demoLogin, enabled = !state.isBusy, modifier = Modifier.fillMaxWidth()) {
+                            Icon(Icons.Outlined.Visibility, null, Modifier.size(18.dp))
+                            Spacer(Modifier.size(8.dp))
+                            Text("Открыть демо")
+                        }
+                    }
+                }
+                Text("или войдите", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.align(Alignment.CenterHorizontally))
+            }
 
             if (state.isRegister) {
                 OutlinedTextField(

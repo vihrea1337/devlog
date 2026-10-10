@@ -8,6 +8,11 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Box
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.Color
+import io.github.vihrea1337.devlog.android.ui.common.humanDuration
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
@@ -21,6 +26,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -109,7 +115,8 @@ fun ProfileScreen(vm: ProfileViewModel = hiltViewModel()) {
         ) {
             UserHeader(state)
             ActivityCard(state.stats, state.isLoading)
-            GithubImportCard(state, vm)
+            if (state.shares.isNotEmpty() || state.topTags.isNotEmpty()) TimeCard(state)
+            if (!state.readOnly) GithubImportCard(state, vm)
             ReminderCard(enabled = reminder.enabled, hour = reminder.hour, onChange = vm::setReminder)
             OutlinedButton(onClick = { confirmLogout = true }, modifier = Modifier.fillMaxWidth()) {
                 Icon(Icons.AutoMirrored.Outlined.Logout, null, Modifier.size(18.dp))
@@ -336,6 +343,82 @@ private fun ReminderCard(enabled: Boolean, hour: Int, onChange: (Boolean, Int) -
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf(18, 19, 20, 21, 22).forEach { h ->
                         FilterChip(selected = hour == h, onClick = { onChange(true, h) }, label = { Text("$h:00") })
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * «Куда уходит время»: кольцевая диаграмма часов по проектам и частые темы (теги ИИ).
+ * Кольцо нарисовано на Canvas: дуги в цветах проектов, в центре — всего часов.
+ */
+@Composable
+private fun TimeCard(state: ProfileUiState) {
+    val total = state.shares.sumOf { it.minutes }.coerceAtLeast(1)
+    val fallback = listOf(Color(0xFF3B6EF5), Color(0xFF7C3AED), Color(0xFF1F9D55), Color(0xFFB7791F), Color(0xFF6B7382))
+    val colors = state.shares.mapIndexed { i, s ->
+        s.color?.let { runCatching { Color(android.graphics.Color.parseColor(it)) }.getOrNull() } ?: fallback[i % fallback.size]
+    }
+    val track = MaterialTheme.colorScheme.surfaceContainerHigh
+    ElevatedCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Text("Куда уходит время", style = MaterialTheme.typography.titleMedium)
+            if (state.shares.isNotEmpty()) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+                    Box(Modifier.size(120.dp), contentAlignment = Alignment.Center) {
+                        Canvas(Modifier.size(120.dp)) {
+                            val stroke = 18.dp.toPx()
+                            val inset = stroke / 2
+                            val arcSize = Size(size.width - stroke, size.height - stroke)
+                            drawArc(track, 0f, 360f, false, Offset(inset, inset), arcSize, style = Stroke(stroke))
+                            var start = -90f
+                            state.shares.forEachIndexed { i, s ->
+                                val sweep = 360f * s.minutes / total
+                                // Небольшой зазор между дугами — сегменты читаются отдельно.
+                                drawArc(colors[i], start + 1f, (sweep - 2f).coerceAtLeast(0.5f), false, Offset(inset, inset), arcSize, style = Stroke(stroke, cap = StrokeCap.Butt))
+                                start += sweep
+                            }
+                        }
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("${total / 60}", style = MaterialTheme.typography.headlineSmall)
+                            Text("часов", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        state.shares.take(5).forEachIndexed { i, s ->
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Surface(shape = CircleShape, color = colors[i], modifier = Modifier.size(10.dp)) {}
+                                Spacer(Modifier.width(8.dp))
+                                Text(s.name, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f), maxLines = 1)
+                                Text(
+                                    "${(100f * s.minutes / total).toInt()}%",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
+                }
+                Text(
+                    "Всего учтено ${humanDuration(total)}",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            if (state.topTags.isNotEmpty()) {
+                Text("Частые темы", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    state.topTags.forEach { (tag, n) ->
+                        Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = RoundedCornerShape(999.dp)) {
+                            Text(
+                                "#$tag · $n",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                            )
+                        }
                     }
                 }
             }

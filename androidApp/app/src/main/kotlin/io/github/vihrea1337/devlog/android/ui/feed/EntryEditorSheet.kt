@@ -1,5 +1,20 @@
 package io.github.vihrea1337.devlog.android.ui.feed
 
+import android.app.Activity
+import android.content.ActivityNotFoundException
+import android.content.Intent
+import android.speech.RecognizerIntent
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.outlined.Mic
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -71,6 +86,28 @@ fun EntryEditorSheet(
     var projectId by rememberSaveable { mutableStateOf(editing?.entry?.projectId ?: defaultProjectId) }
     var minutes by rememberSaveable { mutableStateOf(editing?.entry?.timeSpentMin) }
 
+    // Голосовой ввод: системное распознавание речи Android (отдельное окно Google/производителя).
+    // Разрешение на микрофон приложению не нужно — микрофоном пользуется системное окно.
+    // Надиктованное ДОБАВЛЯЕТСЯ к тексту: можно говорить кусками.
+    val context = LocalContext.current
+    val voice = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        val spoken = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
+        if (result.resultCode == Activity.RESULT_OK && !spoken.isNullOrBlank()) {
+            text = if (text.isBlank()) spoken.replaceFirstChar { it.uppercase() } else text.trimEnd() + " " + spoken
+        }
+    }
+    fun startVoice() {
+        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+            .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            .putExtra(RecognizerIntent.EXTRA_LANGUAGE, "ru-RU")
+            .putExtra(RecognizerIntent.EXTRA_PROMPT, "Расскажите, что сделали")
+        try {
+            voice.launch(intent)
+        } catch (e: ActivityNotFoundException) {
+            Toast.makeText(context, "На телефоне нет распознавания речи", Toast.LENGTH_SHORT).show()
+        }
+    }
+
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val focus = remember { FocusRequester() }
     // Сразу ставим курсор в поле текста — открыл окно и пишешь.
@@ -121,6 +158,11 @@ fun EntryEditorSheet(
                 label = { Text("Что сделал?") },
                 placeholder = { Text("Как попало, с сокращениями — ИИ разберёт: что сделал, какие решения принял, что сломалось и как починил.") },
                 minLines = 4,
+                trailingIcon = {
+                    IconButton(onClick = ::startVoice) {
+                        Icon(Icons.Outlined.Mic, contentDescription = "Надиктовать голосом", tint = MaterialTheme.colorScheme.primary)
+                    }
+                },
                 keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
                 modifier = Modifier
                     .fillMaxWidth()
@@ -128,7 +170,13 @@ fun EntryEditorSheet(
                     .focusRequester(focus),
             )
 
-            Row(Modifier.fillMaxWidth().padding(bottom = 12.dp), horizontalArrangement = Arrangement.End) {
+            Row(Modifier.fillMaxWidth().padding(bottom = 12.dp), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = ::startVoice) {
+                    Icon(Icons.Outlined.Mic, null, Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Голосом")
+                }
+                Spacer(Modifier.weight(1f))
                 TextButton(onClick = onDismiss) { Text("Отмена") }
                 Button(onClick = { onSave(date, text, projectId, minutes) }, enabled = text.isNotBlank()) {
                     Text(if (editing == null) "Сохранить" else "Сохранить правку")

@@ -26,6 +26,9 @@ import kotlinx.coroutines.withContext
 
 /** Вход, регистрация, выход. */
 interface AuthRepository {
+    /** Доступен ли демо-вход на сервере (сервер может его выключить после показа). */
+    suspend fun demoAvailable(): Boolean
+    suspend fun demoLogin()
     suspend fun login(email: String, password: String)
     suspend fun register(email: String, password: String, displayName: String)
     fun logout()
@@ -38,6 +41,13 @@ class AuthRepositoryImpl @Inject constructor(
     private val entries: EntryRepository,
     private val syncScheduler: SyncScheduler,
 ) : AuthRepository {
+
+    override suspend fun demoAvailable(): Boolean = runCatching { api.demoAvailable().enabled }.getOrDefault(false)
+
+    override suspend fun demoLogin() {
+        val response = api.demoLogin()
+        startSession(response.token, response.user.displayName, readOnly = true)
+    }
 
     override suspend fun login(email: String, password: String) {
         val response = api.login(LoginRequest(email.trim(), password))
@@ -53,9 +63,9 @@ class AuthRepositoryImpl @Inject constructor(
      * Перед новой сессией стираем локальный кэш: если до этого на телефоне был другой
      * аккаунт (или прошлая сессия кончилась по 401), его записи не должны мелькнуть в ленте.
      */
-    private suspend fun startSession(token: String, name: String) {
+    private suspend fun startSession(token: String, name: String, readOnly: Boolean = false) {
         withContext(Dispatchers.IO) { entries.clearLocalData() }
-        session.save(token, name)
+        session.save(token, name, readOnly)
         syncScheduler.schedulePeriodic()
     }
 

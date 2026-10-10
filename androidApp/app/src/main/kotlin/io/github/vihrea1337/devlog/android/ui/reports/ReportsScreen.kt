@@ -1,5 +1,8 @@
 package io.github.vihrea1337.devlog.android.ui.reports
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.runtime.mutableIntStateOf
+import kotlinx.coroutines.delay
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -95,11 +98,13 @@ fun ReportsScreen(onOpen: (String) -> Unit, vm: ReportsViewModel = hiltViewModel
     Scaffold(
         topBar = { TopAppBar(title = { Text("Отчёты") }) },
         floatingActionButton = {
-            ExtendedFloatingActionButton(
-                onClick = { showForm = true },
-                icon = { Icon(Icons.Outlined.AutoAwesome, contentDescription = null) },
-                text = { Text("Собрать отчёт") },
-            )
+            if (!state.readOnly) {
+                ExtendedFloatingActionButton(
+                    onClick = { showForm = true },
+                    icon = { Icon(Icons.Outlined.AutoAwesome, contentDescription = null) },
+                    text = { Text("Собрать отчёт") },
+                )
+            }
         },
         snackbarHost = { SnackbarHost(snackbar) },
         contentWindowInsets = WindowInsets(0),
@@ -222,10 +227,15 @@ private fun GenerateSheet(state: ReportsUiState, vm: ReportsViewModel, onDismiss
 
             Button(onClick = vm::generate, enabled = !state.isGenerating, modifier = Modifier.fillMaxWidth().height(48.dp)) {
                 if (state.isGenerating) {
-                    // Сборка с ИИ идёт секунды: без индикатора кажется, что приложение зависло.
+                    // Сборка с ИИ идёт секунды, иногда десятки секунд. Вместо безликого
+                    // «подождите» — что сейчас происходит: так ожидание не кажется зависанием.
+                    var step by remember { mutableIntStateOf(0) }
+                    LaunchedEffect(Unit) {
+                        while (step < GEN_STEPS.lastIndex) { delay(2500); step++ }
+                    }
                     CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
                     Spacer(Modifier.width(10.dp))
-                    Text("ИИ пишет отчёт…")
+                    AnimatedContent(targetState = GEN_STEPS[step], label = "step") { Text(it) }
                 } else {
                     Text("Собрать")
                 }
@@ -233,3 +243,12 @@ private fun GenerateSheet(state: ReportsUiState, vm: ReportsViewModel, onDismiss
         }
     }
 }
+
+/** Что показываем, пока ИИ пишет отчёт. */
+private val GEN_STEPS = listOf(
+    "Читаю записи за период…",
+    "Группирую работу по темам…",
+    "Выделяю решения и проблемы…",
+    "Считаю цифры периода…",
+    "Дописываю текст…",
+)

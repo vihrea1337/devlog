@@ -1,6 +1,24 @@
 package io.github.vihrea1337.devlog.android.ui.feed
 
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.outlined.Visibility
+import androidx.compose.material3.CardDefaults
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import io.github.vihrea1337.devlog.android.ui.common.plural
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -92,6 +110,8 @@ fun FeedScreen(
     val state by vm.state.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+    // Тактильный отклик: короткая вибрация подтверждает сохранение и удаление.
+    val haptic = LocalHapticFeedback.current
 
     // Что открыто в окне снизу: null — ничего, иначе новая запись или правка существующей.
     var editor by remember { mutableStateOf<EditorTarget?>(null) }
@@ -131,11 +151,13 @@ fun FeedScreen(
             )
         },
         floatingActionButton = {
-            ExtendedFloatingActionButton(
-                onClick = { editor = EditorTarget.New },
-                icon = { Icon(Icons.Outlined.Add, contentDescription = null) },
-                text = { Text("Запись") },
-            )
+            if (!state.readOnly) {
+                ExtendedFloatingActionButton(
+                    onClick = { editor = EditorTarget.New },
+                    icon = { Icon(Icons.Outlined.Add, contentDescription = null) },
+                    text = { Text("Запись") },
+                )
+            }
         },
         snackbarHost = { SnackbarHost(snackbar) },
         // Нижние отступы под системную панель даёт внешний Scaffold (с нижней навигацией).
@@ -154,7 +176,10 @@ fun FeedScreen(
                     state = state,
                     onSelectProject = vm::selectProject,
                     onEdit = { editor = EditorTarget.Edit(it) },
-                    onDelete = { vm.delete(it.id) },
+                    onDelete = {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        vm.delete(it.id)
+                    },
                     onReprocess = { vm.reprocess(it.id) },
                 )
             }
@@ -168,6 +193,7 @@ fun FeedScreen(
             defaultProjectId = state.selectedProjectId,
             onDismiss = { editor = null },
             onSave = { date, text, projectId, minutes ->
+                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                 when (target) {
                     EditorTarget.New -> vm.addEntry(date, text, projectId, minutes)
                     is EditorTarget.Edit -> vm.editEntry(target.entry.id, text)
@@ -195,6 +221,10 @@ private fun FeedList(
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 96.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
+        if (state.readOnly) {
+            item(key = "ro") { ReadOnlyBanner() }
+        }
+        item(key = "week") { WeekCard(state.week) }
         if (state.projects.isNotEmpty()) {
             item(key = "filters") {
                 ProjectFilter(state.projects, state.selectedProjectId, onSelectProject)
@@ -217,6 +247,7 @@ private fun FeedList(
             items(dayEntries, key = { it.id }) { entry ->
                 EntryCard(
                     entry = entry,
+                    readOnly = state.readOnly,
                     project = state.projectOf(entry.projectId),
                     onEdit = { onEdit(entry) },
                     onDelete = { onDelete(entry) },
@@ -271,6 +302,7 @@ fun ProjectDot(project: ProjectDto, size: Int = 8) {
 @Composable
 private fun EntryCard(
     entry: EntryDto,
+    readOnly: Boolean,
     project: ProjectDto?,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
@@ -283,7 +315,24 @@ private fun EntryCard(
     var canExpandRaw by remember(entry.id) { mutableStateOf(false) }
     val s = entry.structured
 
-    ElevatedCard(modifier = modifier.fillMaxWidth()) {
+    // Запись только что разобрана ИИ (была «в очереди» — стала «готово»): коротко
+    // подсвечиваем рамку, чтобы глаз заметил, где появился результат.
+    var lastStatus by remember(entry.id) { mutableStateOf(entry.status) }
+    val glow = remember(entry.id) { Animatable(0f) }
+    LaunchedEffect(entry.status) {
+        if ((lastStatus == "queued" || lastStatus == "processing") && entry.status == "structured") {
+            glow.snapTo(1f)
+            glow.animateTo(0f, tween(durationMillis = 2200))
+        }
+        lastStatus = entry.status
+    }
+    val glowColor = LocalStatusColors.current.done
+
+    ElevatedCard(
+        modifier = modifier
+            .fillMaxWidth()
+            .border(2.dp, glowColor.copy(alpha = glow.value), CardDefaults.elevatedShape),
+    ) {
         Column(
             Modifier
                 .padding(14.dp)
@@ -307,7 +356,7 @@ private fun EntryCard(
                 }
                 Spacer(Modifier.weight(1f))
                 StatusBadge(entry.status)
-                Box {
+                if (!readOnly) Box {
                     IconButton(onClick = { menuOpen = true }, modifier = Modifier.size(32.dp)) {
                         Icon(Icons.Outlined.MoreVert, contentDescription = "Действия")
                     }
@@ -346,6 +395,11 @@ private fun EntryCard(
                 if (canExpandRaw) {
                     TextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "Свернуть" else "Показать полностью") }
                 }
+            }
+
+            // Пока ИИ разбирает запись — мерцающая заглушка на месте будущей сути.
+            if (s == null && (entry.status == "queued" || entry.status == "processing") && project?.aiEnabled != false) {
+                AiPendingShimmer()
             }
 
             // У записи в очереди это не ошибка, а пояснение («ждём лимит ИИ-сервиса») — серым.
@@ -417,5 +471,110 @@ private fun StatusBadge(status: String) {
             fontWeight = FontWeight.SemiBold,
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
         )
+    }
+}
+
+/** Плашка демо-режима: всё можно смотреть, ничего нельзя менять. */
+@Composable
+private fun ReadOnlyBanner() {
+    Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = MaterialTheme.shapes.medium) {
+        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Outlined.Visibility, null, tint = MaterialTheme.colorScheme.onPrimaryContainer)
+            Spacer(Modifier.width(10.dp))
+            Text(
+                "Демо-режим: это пример дневника разработчика — смотреть можно всё, менять нельзя.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+            )
+        }
+    }
+}
+
+/**
+ * Сводка за последние 7 дней: дни с записями, учтённые часы, число записей и столбики
+ * по дням (высота — часы; если время не указывали — число записей).
+ */
+@Composable
+private fun WeekCard(week: WeekSummary) {
+    val maxValue = (week.days.maxOfOrNull { it.second } ?: 0).coerceAtLeast(1)
+    ElevatedCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("Последние 7 дней", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                WeekStat(week.activeDays.toString(), plural(week.activeDays, "день", "дня", "дней") + " с записями", Modifier.weight(1f))
+                WeekStat(if (week.minutes > 0) "${week.minutes / 60} ч" else "0", "учтено", Modifier.weight(1f))
+                WeekStat(week.entries.toString(), plural(week.entries, "запись", "записи", "записей"), Modifier.weight(1f))
+            }
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .height(76.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.Bottom,
+            ) {
+                week.days.forEach { (day, value) ->
+                    // Столбики «вырастают» при появлении — экран выглядит живым.
+                    val target = if (value == 0) 0.05f else 0.15f + 0.85f * value / maxValue
+                    val fraction by animateFloatAsState(target, tween(600), label = "bar")
+                    Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Box(
+                            Modifier
+                                .fillMaxWidth(0.7f)
+                                .height(56.dp * fraction)
+                                .background(
+                                    if (value == 0) MaterialTheme.colorScheme.surfaceContainerHigh else MaterialTheme.colorScheme.primary,
+                                    RoundedCornerShape(topStart = 6.dp, topEnd = 6.dp, bottomStart = 2.dp, bottomEnd = 2.dp),
+                                ),
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            day.dayOfWeek.getDisplayName(java.time.format.TextStyle.SHORT, java.util.Locale.forLanguageTag("ru")),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun WeekStat(value: String, label: String, modifier: Modifier = Modifier) {
+    Surface(color = MaterialTheme.colorScheme.surfaceContainer, shape = MaterialTheme.shapes.medium, modifier = modifier) {
+        Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
+            Text(value, style = MaterialTheme.typography.titleLarge, maxLines = 1)
+            Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
+        }
+    }
+}
+
+/** Мерцающие полоски «ИИ разбирает запись…» — как заглушки при загрузке в соцсетях. */
+@Composable
+private fun AiPendingShimmer() {
+    val transition = rememberInfiniteTransition(label = "shimmer")
+    val shift by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(1300, easing = LinearEasing)),
+        label = "shift",
+    )
+    val base = MaterialTheme.colorScheme.surfaceContainerHigh
+    val light = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
+    val brush = Brush.linearGradient(
+        colors = listOf(base, light, base),
+        start = Offset(-400f + 1200f * shift, 0f),
+        end = Offset(1200f * shift, 0f),
+    )
+    Column(Modifier.padding(top = 10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text("ИИ разбирает запись…", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        listOf(0.9f, 0.75f, 0.5f).forEach { w ->
+            Box(
+                Modifier
+                    .fillMaxWidth(w)
+                    .height(10.dp)
+                    .background(brush, RoundedCornerShape(5.dp)),
+            )
+        }
     }
 }

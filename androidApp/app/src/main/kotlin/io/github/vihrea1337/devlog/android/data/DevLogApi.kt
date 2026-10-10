@@ -2,6 +2,7 @@ package io.github.vihrea1337.devlog.android.data
 
 import io.github.vihrea1337.devlog.ActivityStatsDto
 import io.github.vihrea1337.devlog.AuthResponse
+import io.github.vihrea1337.devlog.DemoAvailabilityDto
 import io.github.vihrea1337.devlog.GithubImportRequest
 import io.github.vihrea1337.devlog.ImportResultDto
 import io.github.vihrea1337.devlog.LoginRequest
@@ -37,6 +38,14 @@ interface DevLogApi {
     /** POST /api/auth/login — войти по email+паролю, получить JWT-токен. */
     @POST("api/auth/login")
     suspend fun login(@Body body: LoginRequest): AuthResponse
+
+    /** GET /api/auth/demo — включён ли на сервере демо-вход (кнопка на экране входа). */
+    @GET("api/auth/demo")
+    suspend fun demoAvailable(): DemoAvailabilityDto
+
+    /** POST /api/auth/demo — войти в демо-аккаунт «только для просмотра». */
+    @POST("api/auth/demo")
+    suspend fun demoLogin(): AuthResponse
 
     /** GET /api/me — кто мы (имя, email, привязанный логин GitHub). */
     @GET("api/me")

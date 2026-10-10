@@ -9,9 +9,11 @@ import io.github.vihrea1337.devlog.NewEntry
 import io.github.vihrea1337.devlog.ProjectDto
 import io.github.vihrea1337.devlog.android.data.DevLogApi
 import io.github.vihrea1337.devlog.android.data.ProjectsRepository
+import io.github.vihrea1337.devlog.android.data.SessionStore
 import io.github.vihrea1337.devlog.android.sync.SyncScheduler
 import io.github.vihrea1337.devlog.android.ui.common.humanMessage
 import io.github.vihrea1337.devlog.sync.EntryRepository
+import java.time.LocalDate
 import java.util.UUID
 import javax.inject.Inject
 import kotlin.coroutines.cancellation.CancellationException
@@ -26,11 +28,34 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+
+/** Сводка за последние 7 дней: по дням — минуты (или 60 за запись без времени), всего часов и записей. */
+data class WeekSummary(
+    val days: List<Pair<LocalDate, Int>> = emptyList(),
+    val activeDays: Int = 0,
+    val minutes: Int = 0,
+    val entries: Int = 0,
+) {
+    companion object {
+        fun from(all: List<EntryDto>, today: LocalDate = LocalDate.now()): WeekSummary {
+            val start = today.minusDays(6)
+            val week = all.filter { runCatching { LocalDate.parse(it.occurredOn) }.getOrNull()?.let { d -> !d.isBefore(start) && !d.isAfter(today) } == true }
+            val byDay = week.groupBy { LocalDate.parse(it.occurredOn) }
+            val days = (0..6).map { i ->
+                val d = start.plusDays(i.toLong())
+                val list = byDay[d].orEmpty()
+                d to (list.mapNotNull { it.timeSpentMin }.sum().takeIf { it > 0 } ?: (list.size * 60))
+            }
+            return WeekSummary(days, byDay.size, week.mapNotNull { it.timeSpentMin }.sum(), week.size)
+        }
+    }
+}
 
 /** Что показывает лента. Собирается из нескольких источников в [FeedViewModel.state]. */
 data class FeedUiState(
@@ -41,6 +66,9 @@ data class FeedUiState(
     val isRefreshing: Boolean = false,
     /** Пока не пришёл первый ответ локальной базы — показываем индикатор, а не «пусто». */
     val isLoaded: Boolean = false,
+    val week: WeekSummary = WeekSummary(),
+    /** Демо-вход: только просмотр, кнопки изменений скрыты. */
+    val readOnly: Boolean = false,
 ) {
     /** Проект по id — чтобы карточка показала имя, а не UUID. */
     fun projectOf(id: String?): ProjectDto? = id?.let { projectId -> projects.find { it.id == projectId } }
@@ -68,6 +96,7 @@ class FeedViewModel @Inject constructor(
     private val projectsRepo: ProjectsRepository,
     private val api: DevLogApi,
     private val syncScheduler: SyncScheduler,
+    private val session: SessionStore,
 ) : ViewModel() {
 
     private val selectedProjectId = MutableStateFlow<String?>(null)
@@ -93,9 +122,10 @@ class FeedViewModel @Inject constructor(
      * меняется любой из них, пересчитывается всё состояние. stateIn превращает это
      * в StateFlow, который живёт, пока на экран кто-то смотрит (+5 секунд на поворот).
      */
-    val state: StateFlow<FeedUiState> = combine(
-        localEntries, projects, selectedProjectId, isRefreshing, hiddenIds,
-    ) { list, projectList, selected, refreshing, hidden ->
+    /** Сводка недели — по ВСЕМ записям, а не только по выбранному проекту. */
+    private val week = entries.entries().map { WeekSummary.from(it) }.flowOn(Dispatchers.Default)
+
+    private val base = combine(localEntries, projects, selectedProjectId, isRefreshing, hiddenIds) { list, projectList, selected, refreshing, hidden ->
         FeedUiState(
             entries = list
                 .filterNot { it.id in hidden }
@@ -105,8 +135,12 @@ class FeedViewModel @Inject constructor(
             selectedProjectId = selected,
             isRefreshing = refreshing,
             isLoaded = true,
+            readOnly = session.readOnly,
         )
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), FeedUiState())
+    }
+
+    val state: StateFlow<FeedUiState> = combine(base, week) { s, w -> s.copy(week = w) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), FeedUiState())
 
     init {
         loadProjects()

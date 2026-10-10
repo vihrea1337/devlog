@@ -6,6 +6,7 @@ import io.github.vihrea1337.devlog.ReportDto
 import io.github.vihrea1337.devlog.android.data.AuthRepository
 import io.github.vihrea1337.devlog.android.data.ProjectsRepository
 import io.github.vihrea1337.devlog.android.data.ReportsRepository
+import io.github.vihrea1337.devlog.android.data.SessionInfo
 import io.github.vihrea1337.devlog.android.reminder.delayUntilHour
 import io.github.vihrea1337.devlog.android.ui.common.plural
 import io.github.vihrea1337.devlog.android.ui.login.LoginViewModel
@@ -50,6 +51,8 @@ class ViewModelTest {
 
     private class FakeAuth(var failWith: Exception? = null) : AuthRepository {
         var loggedInAs: String? = null
+        override suspend fun demoAvailable() = true
+        override suspend fun demoLogin() { loggedInAs = "demo" }
         override suspend fun login(email: String, password: String) {
             failWith?.let { throw it }
             loggedInAs = email
@@ -80,6 +83,8 @@ class ViewModelTest {
             format = "markdown", contentMd = "## Кратко\nтекст", createdAt = "2026-10-10T10:00:00Z",
         )
     }
+
+    private object NotReadOnly : SessionInfo { override val readOnly = false }
 
     // --- Вход ---
 
@@ -126,7 +131,7 @@ class ViewModelTest {
 
     @Test
     fun `готовый период подставляет даты`() = runTest(dispatcher) {
-        val vm = ReportsViewModel(FakeReports(), FakeProjects())
+        val vm = ReportsViewModel(FakeReports(), FakeProjects(), NotReadOnly)
         vm.selectPreset(PeriodPreset.LAST_7)
         val (from, to) = PeriodPreset.LAST_7.range()
 
@@ -137,7 +142,7 @@ class ViewModelTest {
     @Test
     fun `конец периода раньше начала — ошибка, отчёт не собирается`() = runTest(dispatcher) {
         val reports = FakeReports()
-        val vm = ReportsViewModel(reports, FakeProjects())
+        val vm = ReportsViewModel(reports, FakeProjects(), NotReadOnly)
         vm.setPeriodStart("2026-10-10")
         vm.setPeriodEnd("2026-10-01")
         vm.generate()
@@ -150,7 +155,7 @@ class ViewModelTest {
     @Test
     fun `сборка отчёта по проекту — отчёт в списке и событие «открыть»`() = runTest(dispatcher) {
         val reports = FakeReports()
-        val vm = ReportsViewModel(reports, FakeProjects())
+        val vm = ReportsViewModel(reports, FakeProjects(), NotReadOnly)
         vm.selectProject("p1")
         vm.opened.test {
             vm.generate()

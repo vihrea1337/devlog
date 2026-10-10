@@ -9,6 +9,7 @@ import io.github.vihrea1337.devlog.ProjectDto
 import io.github.vihrea1337.devlog.ReportDto
 import io.github.vihrea1337.devlog.android.data.DevLogApi
 import io.github.vihrea1337.devlog.android.data.ProjectsRepository
+import io.github.vihrea1337.devlog.android.data.SessionInfo
 import io.github.vihrea1337.devlog.android.data.ReportsRepository
 import io.github.vihrea1337.devlog.android.ui.common.humanMessage
 import io.github.vihrea1337.devlog.android.ui.navigation.ReportRoute
@@ -60,6 +61,8 @@ data class ReportsUiState(
     val periodEnd: String = PeriodPreset.THIS_MONTH.range().second.toString(),
     val selectedProjectId: String? = null,
     val error: String? = null,
+    /** Демо-вход: собирать и менять отчёты нельзя, только смотреть. */
+    val readOnly: Boolean = false,
 ) {
     fun projectOf(id: String?): ProjectDto? = id?.let { projectId -> projects.find { it.id == projectId } }
 }
@@ -68,9 +71,10 @@ data class ReportsUiState(
 class ReportsViewModel @Inject constructor(
     private val reportsRepo: ReportsRepository,
     private val projectsRepo: ProjectsRepository,
+    session: SessionInfo,
 ) : ViewModel() {
 
-    private val _state = MutableStateFlow(ReportsUiState())
+    private val _state = MutableStateFlow(ReportsUiState(readOnly = session.readOnly))
     val state: StateFlow<ReportsUiState> = _state.asStateFlow()
 
     /** Отчёт собран — экран откроет его просмотр (разовое событие, не состояние). */
@@ -152,6 +156,7 @@ data class ReportDetailUiState(
     val error: String? = null,
     /** Отчёт удалён — экран вернётся к списку. */
     val deleted: Boolean = false,
+    val readOnly: Boolean = false,
 )
 
 /**
@@ -163,11 +168,12 @@ data class ReportDetailUiState(
 class ReportDetailViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val reportsRepo: ReportsRepository,
+    session: SessionInfo,
 ) : ViewModel() {
 
     private val reportId: String = savedStateHandle.toRoute<ReportRoute>().id
 
-    private val _state = MutableStateFlow(ReportDetailUiState())
+    private val _state = MutableStateFlow(ReportDetailUiState(readOnly = session.readOnly))
     val state: StateFlow<ReportDetailUiState> = _state.asStateFlow()
 
     init {
