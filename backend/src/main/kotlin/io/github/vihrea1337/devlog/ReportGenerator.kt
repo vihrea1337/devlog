@@ -205,16 +205,24 @@ object ReportGenerator {
      * 2026-10-10» — машинный формат в документе для человека. Теперь:
      * весь месяц (или его начало по сегодня) — «Отчёт за октябрь 2026»; внутри месяца —
      * «Отчёт за 4–10 октября 2026»; внутри года — «Отчёт за 20 июля — 10 октября 2026».
+     * Отчёт по одному проекту получает его имя впереди: «DevLog: отчёт за октябрь 2026».
      */
-    fun defaultTitle(from: LocalDate, to: LocalDate, today: LocalDate = LocalDate.now()): String {
+    fun defaultTitle(
+        from: LocalDate,
+        to: LocalDate,
+        today: LocalDate = LocalDate.now(),
+        projectName: String? = null,
+    ): String {
         val sameMonth = from.year == to.year && from.month == to.month
         val wholeMonth = sameMonth && from.dayOfMonth == 1 && (to.dayOfMonth == to.lengthOfMonth() || to == today)
-        return when {
+        val period = when {
             wholeMonth -> "Отчёт за ${monthsNominative[from.monthValue - 1]} ${from.year}"
             sameMonth -> "Отчёт за ${from.dayOfMonth}–${humanDate(to)}"
             from.year == to.year -> "Отчёт за ${humanDate(from).substringBeforeLast(' ')} — ${humanDate(to)}"
             else -> "Отчёт за ${humanDate(from)} — ${humanDate(to)}"
         }
+        // «Отчёт за …» → «DevLog: отчёт за …» — с маленькой буквы после двоеточия.
+        return if (projectName.isNullOrBlank()) period else "$projectName: ${period.replaceFirstChar { it.lowercase() }}"
     }
 
     /** 2026-08-12 → «12 августа 2026». */

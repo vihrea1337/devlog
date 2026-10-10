@@ -34,10 +34,12 @@ fun Route.reportRoutes() {
                 parseUuidOrNull(it) ?: return@post call.badRequest("Некорректный id проекта")
             }
             // Отчёт можно строить только по своему проекту.
-            if (projectId != null && ProjectRepository.getById(call.userId(), projectId) == null) {
-                return@post call.badRequest("Проект не найден")
+            val project = projectId?.let {
+                ProjectRepository.getById(call.userId(), it) ?: return@post call.badRequest("Проект не найден")
             }
-            val title = body.title?.trim()?.ifBlank { null }?.take(200) ?: ReportGenerator.defaultTitle(from, to)
+            // Отчёт по проекту называем по проекту: в списке сразу видно, о чём он.
+            val title = body.title?.trim()?.ifBlank { null }?.take(200)
+                ?: ReportGenerator.defaultTitle(from, to, projectName = project?.name)
             val md = ReportGenerator.generate(call.userId(), title, from, to, projectId)
             call.respond(ReportRepository.create(call.userId(), projectId, title, from, to, body.format, md))
         }

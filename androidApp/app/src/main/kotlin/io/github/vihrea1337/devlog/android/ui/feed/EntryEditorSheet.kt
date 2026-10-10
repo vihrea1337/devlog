@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.layout.Arrangement
@@ -158,11 +157,6 @@ fun EntryEditorSheet(
                 label = { Text("Что сделал?") },
                 placeholder = { Text("Как попало, с сокращениями — ИИ разберёт: что сделал, какие решения принял, что сломалось и как починил.") },
                 minLines = 4,
-                trailingIcon = {
-                    IconButton(onClick = ::startVoice) {
-                        Icon(Icons.Outlined.Mic, contentDescription = "Надиктовать голосом", tint = MaterialTheme.colorScheme.primary)
-                    }
-                },
                 keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
                 modifier = Modifier
                     .fillMaxWidth()

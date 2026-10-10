@@ -225,7 +225,9 @@ private fun GenerateSheet(state: ReportsUiState, vm: ReportsViewModel, onDismiss
 
             state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
 
-            Button(onClick = vm::generate, enabled = !state.isGenerating, modifier = Modifier.fillMaxWidth().height(48.dp)) {
+            // Во время сборки кнопка не выключается (enabled = false сделал бы её серой и
+            // подсказки стали бы нечитаемы) — просто повторное нажатие ничего не делает.
+            Button(onClick = { if (!state.isGenerating) vm.generate() }, modifier = Modifier.fillMaxWidth().height(48.dp)) {
                 if (state.isGenerating) {
                     // Сборка с ИИ идёт секунды, иногда десятки секунд. Вместо безликого
                     // «подождите» — что сейчас происходит: так ожидание не кажется зависанием.
