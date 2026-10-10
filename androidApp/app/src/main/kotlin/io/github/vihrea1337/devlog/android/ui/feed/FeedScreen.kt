@@ -502,7 +502,8 @@ private fun WeekCard(week: WeekSummary) {
             Text("Последние 7 дней", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 WeekStat(week.activeDays.toString(), plural(week.activeDays, "день", "дня", "дней") + " с записями", Modifier.weight(1f))
-                WeekStat(if (week.minutes > 0) "${week.minutes / 60} ч" else "0", "учтено", Modifier.weight(1f))
+                // Меньше часа — в минутах, иначе «30 мин» превратилось бы в «0 ч».
+                WeekStat(if (week.minutes < 60) "${week.minutes} мин" else "${week.minutes / 60} ч", "учтено", Modifier.weight(1f))
                 WeekStat(week.entries.toString(), plural(week.entries, "запись", "записи", "записей"), Modifier.weight(1f))
             }
             Row(

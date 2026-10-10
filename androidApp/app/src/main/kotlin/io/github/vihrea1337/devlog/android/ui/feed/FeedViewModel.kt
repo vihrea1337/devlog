@@ -9,7 +9,7 @@ import io.github.vihrea1337.devlog.NewEntry
 import io.github.vihrea1337.devlog.ProjectDto
 import io.github.vihrea1337.devlog.android.data.DevLogApi
 import io.github.vihrea1337.devlog.android.data.ProjectsRepository
-import io.github.vihrea1337.devlog.android.data.SessionStore
+import io.github.vihrea1337.devlog.android.data.SessionInfo
 import io.github.vihrea1337.devlog.android.sync.SyncScheduler
 import io.github.vihrea1337.devlog.android.ui.common.humanMessage
 import io.github.vihrea1337.devlog.sync.EntryRepository
@@ -96,7 +96,7 @@ class FeedViewModel @Inject constructor(
     private val projectsRepo: ProjectsRepository,
     private val api: DevLogApi,
     private val syncScheduler: SyncScheduler,
-    private val session: SessionStore,
+    private val session: SessionInfo,
 ) : ViewModel() {
 
     private val selectedProjectId = MutableStateFlow<String?>(null)
