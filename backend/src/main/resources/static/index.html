@@ -292,6 +292,8 @@
   }
   /* Демо-режим «только просмотр»: прячем всё, что меняет данные. */
   body.ro .ro-hide, body.ro #composer, body.ro .entry-actions { display: none !important; }
+  /* Обратное к .ro-hide: показывать только в демо-режиме (например, другая подпись кнопки). */
+  body:not(.ro) .ro-only { display: none !important; }
 
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { animation: none !important; transition: none !important; }
@@ -459,7 +461,7 @@
       <div class="card actions-card">
         <p class="card-title">Действия</p>
         <div class="actions">
-          <button class="action" data-open="reportPanel"><span class="ico"><svg class="i"><use href="#i-sparkle"/></svg></span><span><b>Собрать отчёт</b><small>за неделю, месяц или свой период</small></span></button>
+          <button class="action" data-open="reportPanel"><span class="ico"><svg class="i"><use href="#i-sparkle"/></svg></span><span class="ro-hide"><b>Собрать отчёт</b><small>за неделю, месяц или свой период</small></span><span class="ro-only"><b>Отчёты</b><small>посмотреть готовые</small></span></button>
           <button class="action ro-hide" data-open="githubPanel"><span class="ico"><svg class="i"><use href="#i-git"/></svg></span><span><b>Импорт с GitHub</b><small>коммиты превратятся в записи</small></span></button>
           <button class="action ro-hide" data-open="gitlabPanel"><span class="ico"><svg class="i"><use href="#i-git"/></svg></span><span><b>Импорт с GitLab</b><small>по личному токену</small></span></button>
           <button class="action ro-hide" data-open="textImportPanel"><span class="ico"><svg class="i"><use href="#i-upload"/></svg></span><span><b>Импорт текста</b><small>лог с датами, выгрузка чата</small></span></button>
