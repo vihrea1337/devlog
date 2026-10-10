@@ -9,6 +9,9 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import io.github.vihrea1337.devlog.EntryDto
 import io.github.vihrea1337.devlog.StructuredDto
 import io.github.vihrea1337.devlog.android.ui.feed.EntryCard
+import io.github.vihrea1337.devlog.android.ui.feed.WeekCard
+import io.github.vihrea1337.devlog.android.ui.feed.WeekSummary
+import java.time.LocalDate
 import io.github.vihrea1337.devlog.android.ui.theme.DevLogTheme
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -72,5 +75,17 @@ class EntryCardTest {
 
         compose.onNodeWithText("ИИ разбирает запись…").assertExists()
         compose.onNodeWithText("перевёл миграции на flyway").assertExists()
+    }
+
+    @Test
+    fun пустая_неделя_фраза_вместо_нулей() {
+        compose.setContent {
+            DevLogTheme(darkTheme = false) {
+                WeekCard(WeekSummary.from(listOf(ready.copy(occurredOn = "2026-10-01")), today = LocalDate.parse("2026-10-20")))
+            }
+        }
+
+        compose.onNodeWithText("За неделю записей не было. Последняя — 19 дней назад.").assertIsDisplayed()
+        compose.onNodeWithText("учтено").assertDoesNotExist()
     }
 }

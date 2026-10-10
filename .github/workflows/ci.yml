@@ -4,7 +4,8 @@ name: CI
 # Репозиторий публичный — минуты GitHub Actions для него бесплатны, поэтому гоняем всё:
 #   1) тесты бэкенда и общего модуля shared (на встроенной базе H2) + сборка дистрибутива;
 #   2) смоук-тест НАСТОЯЩЕГО Docker-образа на настоящем Postgres — ровно как на сервере;
-#   3) сборка Android-приложения.
+#   3) сборка Android-приложения и юнит-тесты;
+#   4) UI-тесты Compose на настоящем Android-эмуляторе.
 on:
   push:
     branches: [ main ]
@@ -146,4 +147,45 @@ jobs:
         with:
           name: devlog-apk
           path: androidApp/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 7
+
+  android-ui-tests:
+    name: Android — UI-тесты на эмуляторе
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Установить JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+      # Эмулятору нужна аппаратная виртуализация (KVM) — на раннерах GitHub она есть,
+      # но по умолчанию недоступна обычному пользователю. Открываем доступ.
+      - name: Включить KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Принять лицензии Android SDK
+        run: yes | sdkmanager --licenses > /dev/null || true
+      # Экшен скачивает образ Android, запускает эмулятор без окна, ждёт загрузки
+      # и выполняет script; после — гасит эмулятор. Анимации выключены — тесты стабильнее.
+      - name: UI-тесты Compose (connectedDebugAndroidTest)
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          working-directory: androidApp
+          script: chmod +x ./gradlew && ./gradlew :app:connectedDebugAndroidTest --no-daemon
+      - name: Отчёт UI-тестов (если упали)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-ui-test-report
+          path: androidApp/app/build/reports/androidTests/
           retention-days: 7

@@ -495,11 +495,22 @@ private fun ReadOnlyBanner() {
  * по дням (высота — часы; если время не указывали — число записей).
  */
 @Composable
-private fun WeekCard(week: WeekSummary) {
+internal fun WeekCard(week: WeekSummary) { // internal — для UI-теста EntryCardTest
     val maxValue = (week.days.maxOfOrNull { it.second } ?: 0).coerceAtLeast(1)
     ElevatedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("Последние 7 дней", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            // Пустая неделя: вместо ряда нулей и плоских столбиков — одна понятная фраза.
+            if (week.entries == 0) {
+                Text(
+                    when (val d = week.daysSinceLast) {
+                        null -> "Записей пока нет. Пара строк в день — и здесь появится картина недели."
+                        else -> "За неделю записей не было. Последняя — $d ${plural(d, "день", "дня", "дней")} назад."
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                return@Column
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 WeekStat(week.activeDays.toString(), plural(week.activeDays, "день", "дня", "дней") + " с записями", Modifier.weight(1f))
                 // Меньше часа — в минутах, иначе «30 мин» превратилось бы в «0 ч».

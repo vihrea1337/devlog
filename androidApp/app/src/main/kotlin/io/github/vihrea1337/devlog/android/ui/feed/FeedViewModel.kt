@@ -41,10 +41,17 @@ data class WeekSummary(
     val activeDays: Int = 0,
     val minutes: Int = 0,
     val entries: Int = 0,
+    /** Сколько дней прошло с последней записи (0 — сегодня); null — записей нет совсем. */
+    val daysSinceLast: Int? = null,
 ) {
     companion object {
         fun from(all: List<EntryDto>, today: LocalDate = LocalDate.now()): WeekSummary {
             val start = today.minusDays(6)
+            // Последняя запись не из будущего — на случай сбитых часов на телефоне.
+            val last = all.mapNotNull { runCatching { LocalDate.parse(it.occurredOn) }.getOrNull() }
+                .filter { !it.isAfter(today) }
+                .maxOrNull()
+            val daysSinceLast = last?.let { java.time.temporal.ChronoUnit.DAYS.between(it, today).toInt() }
             val week = all.filter { runCatching { LocalDate.parse(it.occurredOn) }.getOrNull()?.let { d -> !d.isBefore(start) && !d.isAfter(today) } == true }
             val byDay = week.groupBy { LocalDate.parse(it.occurredOn) }
             val days = (0..6).map { i ->
@@ -52,7 +59,7 @@ data class WeekSummary(
                 val list = byDay[d].orEmpty()
                 d to (list.mapNotNull { it.timeSpentMin }.sum().takeIf { it > 0 } ?: (list.size * 60))
             }
-            return WeekSummary(days, byDay.size, week.mapNotNull { it.timeSpentMin }.sum(), week.size)
+            return WeekSummary(days, byDay.size, week.mapNotNull { it.timeSpentMin }.sum(), week.size, daysSinceLast)
         }
     }
 }

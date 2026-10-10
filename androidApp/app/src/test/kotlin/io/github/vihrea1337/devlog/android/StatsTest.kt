@@ -89,6 +89,16 @@ class StatsTest {
         assertEquals(1, week.entries)
     }
 
+    @Test
+    fun `пустая неделя — сколько дней прошло с последней записи`() {
+        val week = WeekSummary.from(listOf(entry("2026-09-30"), entry("2026-10-01"), entry("2026-12-31")), today)
+
+        assertEquals(0, week.entries)
+        // Запись «из будущего» (сбитые часы) не считается последней.
+        assertEquals(9, week.daysSinceLast)
+        assertEquals(null, WeekSummary.from(emptyList(), today).daysSinceLast)
+    }
+
     // --- Куда уходит время ---
 
     private val projects = listOf(
