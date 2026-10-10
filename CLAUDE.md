@@ -336,5 +336,7 @@ SQLDelight), импорт GitLab (миграция V8). При следующе�
   (Postgres `devlog-pg` на порту 5433) → `PORT=<свободный порт, 8080 может быть занят другим
   проектом> ./gradlew -p backend run` → http://localhost:PORT.
 - **Android:** из `androidApp/`, `.\gradlew.bat :app:assembleDebug`
-  (→ `app/build/outputs/apk/debug/app-debug.apk`). Адрес API — в `data/DevLogApi.kt` (`BASE_URL`).
+  (→ `app/build/outputs/apk/debug/app-debug.apk`). Адрес API — поле сборки `BuildConfig.BASE_URL`
+  (`app/build.gradle.kts`): release всегда боевой, debug можно направить на локальный сервер —
+  `-Pdevlog.baseUrl=http://10.0.2.2:PORT/` (HTTP к 10.0.2.2/localhost/192.168.0.102 разрешён только в debug).
   SDK берётся из `androidApp/local.properties` (`sdk.dir`, в .gitignore).

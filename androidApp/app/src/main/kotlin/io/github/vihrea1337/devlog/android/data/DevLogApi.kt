@@ -1,5 +1,6 @@
 package io.github.vihrea1337.devlog.android.data
 
+import io.github.vihrea1337.devlog.android.BuildConfig
 import io.github.vihrea1337.devlog.ActivityStatsDto
 import io.github.vihrea1337.devlog.AuthResponse
 import io.github.vihrea1337.devlog.DemoAvailabilityDto
@@ -105,9 +106,9 @@ interface DevLogApi {
     suspend fun unshareReport(@Path("id") id: String): Response<Unit>
 
     companion object {
-        // Адрес боевого бэкенда DevLog (Caddy отдаёт HTTPS на порту 34444). Должен оканчиваться на "/".
-        // Если переедем — меняем только эту строку.
-        const val BASE_URL = "https://vihreaschedule.duckdns.org:34444/"
+        // Адрес бэкенда DevLog — из настроек сборки (см. app/build.gradle.kts): release всегда
+        // смотрит на боевой сервер, debug можно направить на локальный. Оканчивается на "/".
+        val BASE_URL: String = BuildConfig.BASE_URL
 
         /**
          * Относительная ссылка от сервера («/r/abc») → полный адрес, который можно

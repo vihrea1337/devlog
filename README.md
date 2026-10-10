@@ -98,8 +98,9 @@ docker compose -f backend/docker-compose.yml up -d      # Postgres на порт
 # 3. Запустить сервер
 cd backend && ./gradlew run                              # http://localhost:8080
 
-# Android-приложение (адрес сервера — BASE_URL в data/DevLogApi.kt)
-cd androidApp && ./gradlew :app:assembleDebug
+# Android-приложение: по умолчанию смотрит на боевой сервер; на свой локальный —
+# через параметр сборки (10.0.2.2 — так эмулятор видит компьютер; HTTP разрешён только в debug)
+cd androidApp && ./gradlew :app:assembleDebug -Pdevlog.baseUrl=http://10.0.2.2:8080/
 ```
 
 ## Тесты

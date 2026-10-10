@@ -13,6 +13,13 @@ plugins {
     id("com.google.dagger.hilt.android")
 }
 
+// Адрес сервера — настройка сборки, а не строка в коде. Боевой — по умолчанию; отладочную
+// сборку можно направить на свой компьютер без правки кода:
+//   ./gradlew :app:assembleDebug -Pdevlog.baseUrl=http://10.0.2.2:8080/
+// (10.0.2.2 — так эмулятор видит компьютер, на котором запущен.)
+val prodBaseUrl = "https://vihreaschedule.duckdns.org:34444/"
+val debugBaseUrl = (findProperty("devlog.baseUrl") as String?) ?: prodBaseUrl
+
 android {
     // namespace — базовый пакет для сгенерированного класса R и т.п.
     namespace = "io.github.vihrea1337.devlog.android"
@@ -24,6 +31,7 @@ android {
         targetSdk = 36
         versionCode = 4
         versionName = "1.3.0"
+        buildConfigField("String", "BASE_URL", "\"$debugBaseUrl\"")
     }
 
     buildTypes {
@@ -36,6 +44,8 @@ android {
             // Подписываем отладочным ключом: APK раздаётся со своего сайта, не через Google Play,
             // и ключ магазина не нужен. Иначе release-сборка вышла бы неустанавливаемой.
             signingConfig = signingConfigs.getByName("debug")
+            // Release всегда смотрит на боевой сервер, что бы ни передали в -Pdevlog.baseUrl.
+            buildConfigField("String", "BASE_URL", "\"$prodBaseUrl\"")
         }
     }
 
@@ -47,6 +57,8 @@ android {
     buildFeatures {
         // Включаем Jetpack Compose (декларативный UI).
         compose = true
+        // Класс BuildConfig с полями сборки (BASE_URL выше).
+        buildConfig = true
     }
 
     // Разрешаем держать исходники в папке src/main/kotlin (а не только java).
