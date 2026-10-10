@@ -78,7 +78,7 @@ Kotlin + Jetpack Compose (Material 3), minSdk 26, targetSdk 36, release-сбор
 |------|-----------|
 | Бэкенд | Kotlin, Ktor 3, Exposed, HikariCP, Flyway |
 | База | PostgreSQL 16 |
-| Android | Kotlin, Jetpack Compose, Hilt, WorkManager, Navigation, SQLDelight, Retrofit, Ktor Client, DataStore |
+| Android | Kotlin, Jetpack Compose, Hilt, WorkManager, Navigation, SQLDelight, Ktor Client (на OkHttp), DataStore |
 | ИИ | Groq (OpenAI-совместимый API) |
 | Веб | HTML/CSS/JS без фреймворков |
 | Деплой | Docker Compose, Caddy (HTTPS через DuckDNS) |

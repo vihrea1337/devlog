@@ -267,8 +267,7 @@ class FeedViewModel @Inject constructor(
     fun reprocess(id: String) {
         viewModelScope.launch {
             try {
-                val r = api.reprocess(id)
-                if (!r.isSuccessful) throw retrofit2.HttpException(r)
+                api.reprocess(id)
                 refresh()
             } catch (e: Exception) {
                 _events.send(FeedEvent.Message(e.humanMessage()))

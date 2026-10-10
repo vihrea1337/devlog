@@ -8,23 +8,36 @@ import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
+import io.github.vihrea1337.devlog.ErrorResponse
+import io.github.vihrea1337.devlog.android.data.ApiException
 import io.github.vihrea1337.devlog.android.data.DevLogApi
 import io.github.vihrea1337.devlog.android.data.SessionStore
 import io.github.vihrea1337.devlog.db.DevLogDatabase
 import io.github.vihrea1337.devlog.sync.DevLogSyncClient
 import io.github.vihrea1337.devlog.sync.EntryRepository
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.HttpClientEngine
 import io.ktor.client.engine.okhttp.OkHttp
+import io.ktor.client.plugins.HttpResponseValidator
+import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.client.plugins.defaultRequest
+import io.ktor.client.statement.bodyAsText
+import io.ktor.http.ContentType
+import io.ktor.http.contentType
+import io.ktor.http.isSuccess
+import io.ktor.serialization.kotlinx.json.json
 import java.util.concurrent.TimeUnit
 import javax.inject.Singleton
 import kotlinx.serialization.json.Json
-import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
-import retrofit2.Retrofit
-import retrofit2.converter.kotlinx.serialization.asConverterFactory
 
 /**
  * Hilt-модуль: «рецепты», как создавать объекты, которые нельзя просто пометить @Inject
- * (классы из чужих библиотек: OkHttp, Retrofit, SQLDelight, общий модуль shared/).
+ * (классы из чужих библиотек: OkHttp, Ktor, SQLDelight, общий модуль shared/).
+ *
+ * Сетевой стек — одна цепочка: OkHttpClient (таймауты, токен, 401 → выход) → движок Ktor
+ * поверх него → HttpClient для DevLogApi и DevLogSyncClient для синхронизации записей.
+ * Раньше рядом жил ещё Retrofit — второй клиент со своей обработкой ошибок.
  *
  * @InstallIn(SingletonComponent) + @Singleton — один экземпляр на всё приложение.
  * Свои классы (SessionStore, репозитории) Hilt умеет создавать сам по @Inject-конструктору —
@@ -66,14 +79,45 @@ object AppModule {
         }
         .build()
 
+    /**
+     * Движок Ktor поверх нашего OkHttpClient: TLS платформы, общий пул соединений и тот же
+     * перехватчик (токен, 401 → выход). Движок CIO по умолчанию на Android не проходил
+     * проверку сертификата (см. build.gradle.kts). Один движок на всё приложение — его
+     * делят HttpClient для DevLogApi и клиент синхронизации.
+     */
     @Provides
     @Singleton
-    fun provideApi(client: OkHttpClient, json: Json): DevLogApi = Retrofit.Builder()
-        .baseUrl(DevLogApi.BASE_URL)
-        .client(client)
-        .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
-        .build()
-        .create(DevLogApi::class.java)
+    fun provideEngine(okHttp: OkHttpClient): HttpClientEngine = OkHttp.create { preconfigured = okHttp }
+
+    /**
+     * HttpClient для DevLogApi. Плагины Ktor делают то, что раньше делал Retrofit:
+     * - defaultRequest — адрес сервера (в DevLogApi пути относительные) и тип тела JSON;
+     * - ContentNegotiation — JSON <-> классы из shared/ через kotlinx.serialization;
+     * - HttpResponseValidator — на 4xx/5xx бросить ApiException с причиной из тела ответа.
+     *   Без него Ktor молча попытался бы разобрать `{"error": "…"}` как, например, ReportDto
+     *   и упал бы с непонятной ошибкой сериализации.
+     */
+    @Provides
+    @Singleton
+    fun provideHttpClient(engine: HttpClientEngine, json: Json): HttpClient = HttpClient(engine) {
+        defaultRequest {
+            url(DevLogApi.BASE_URL)
+            contentType(ContentType.Application.Json)
+        }
+        install(ContentNegotiation) { json(json) }
+        HttpResponseValidator {
+            validateResponse { response ->
+                if (!response.status.isSuccess()) {
+                    // Тело может быть чем угодно (например, HTML от прокси) — не смогли
+                    // разобрать, останется только код HTTP.
+                    val reason = runCatching {
+                        json.decodeFromString(ErrorResponse.serializer(), response.bodyAsText()).error.ifBlank { null }
+                    }.getOrNull()
+                    throw ApiException(response.status.value, reason)
+                }
+            }
+        }
+    }
 
     /** Настоящий файл SQLite на телефоне — офлайн-кэш ленты (схема и запросы — в shared/). */
     @Provides
@@ -85,18 +129,14 @@ object AppModule {
     @Singleton
     fun provideDatabase(driver: SqlDriver): DevLogDatabase = DevLogDatabase(driver)
 
-    /**
-     * Клиент синхронизации из shared/ работает на движке OkHttp и том же OkHttpClient,
-     * что и Retrofit: общий пул соединений, TLS платформы и общий перехватчик (401 → выход).
-     * Движок CIO по умолчанию на Android не проходил проверку сертификата (см. build.gradle.kts).
-     */
+    /** Клиент синхронизации из shared/ — на том же движке, что и DevLogApi. */
     @Provides
     @Singleton
-    fun provideSyncClient(session: SessionStore, okHttp: OkHttpClient): DevLogSyncClient =
+    fun provideSyncClient(session: SessionStore, engine: HttpClientEngine): DevLogSyncClient =
         DevLogSyncClient(
             baseUrl = DevLogApi.BASE_URL,
             tokenProvider = { session.token },
-            engine = OkHttp.create { preconfigured = okHttp },
+            engine = engine,
         )
 
     /**

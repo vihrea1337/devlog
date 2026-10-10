@@ -28,45 +28,33 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import io.github.vihrea1337.devlog.ErrorResponse
+import io.github.vihrea1337.devlog.android.data.ApiException
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
 import java.util.Locale
-import kotlinx.serialization.json.Json
 
 // --- Тексты ошибок ---
 
 /**
- * Сообщение об ошибке человеческим языком. Retrofit на ответ 4xx/5xx бросает
- * HttpException с текстом вида «HTTP 400 Bad Request» — сам по себе он ничего
- * не объясняет. Но сервер кладёт причину в тело ответа (`{"error": "…"}`),
- * поэтому сначала пробуем достать её оттуда.
+ * Сообщение об ошибке человеческим языком. На ответ 4xx/5xx HTTP-клиент бросает
+ * ApiException (см. AppModule) — с кодом и причиной, которую сервер кладёт в тело
+ * ответа (`{"error": "…"}`). Причину показываем как есть: её писали для людей.
  */
 fun Throwable.humanMessage(): String = when (this) {
     is java.net.SocketTimeoutException -> "Сервер долго не отвечает — попробуйте ещё раз"
     is java.io.IOException -> "Нет связи с сервером"
-    is retrofit2.HttpException -> when (code()) {
+    // 401 бывает двух видов: неверный пароль на входе (сервер пишет причину в тело)
+    // и истёкший токен (тело пустое). Раньше любой 401 превращался в «Сессия истекла» —
+    // даже опечатка в пароле на экране входа.
+    is ApiException -> serverMessage ?: when (code) {
         401 -> "Сессия истекла — войдите заново"
-        else -> serverError() ?: "Ошибка сервера (${code()})"
+        else -> "Ошибка сервера ($code)"
     }
     else -> message ?: "Неизвестная ошибка"
 }
-
-/**
- * Текст ошибки из тела ответа. `errorBody()` читается один раз и может быть чем
- * угодно (например, HTML от прокси), поэтому всё в runCatching: не смогли
- * разобрать — вернём null, и наверху останется код HTTP.
- */
-private fun retrofit2.HttpException.serverError(): String? = runCatching {
-    val body = response()?.errorBody()?.string().orEmpty()
-    errorJson.decodeFromString(ErrorResponse.serializer(), body).error.ifBlank { null }
-}.getOrNull()
-
-/** Один разборщик на всё приложение: создавать Json на каждую ошибку дорого. */
-private val errorJson = Json { ignoreUnknownKeys = true }
 
 // --- Даты ---
 

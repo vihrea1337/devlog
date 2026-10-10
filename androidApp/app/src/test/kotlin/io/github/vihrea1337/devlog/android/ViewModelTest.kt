@@ -3,11 +3,13 @@ package io.github.vihrea1337.devlog.android
 import app.cash.turbine.test
 import io.github.vihrea1337.devlog.ProjectDto
 import io.github.vihrea1337.devlog.ReportDto
+import io.github.vihrea1337.devlog.android.data.ApiException
 import io.github.vihrea1337.devlog.android.data.AuthRepository
 import io.github.vihrea1337.devlog.android.data.ProjectsRepository
 import io.github.vihrea1337.devlog.android.data.ReportsRepository
 import io.github.vihrea1337.devlog.android.data.SessionInfo
 import io.github.vihrea1337.devlog.android.reminder.delayUntilHour
+import io.github.vihrea1337.devlog.android.ui.common.humanMessage
 import io.github.vihrea1337.devlog.android.ui.common.plural
 import io.github.vihrea1337.devlog.android.ui.login.LoginViewModel
 import io.github.vihrea1337.devlog.android.ui.reports.PeriodPreset
@@ -34,7 +36,7 @@ import org.junit.Test
 /**
  * Юнит-тесты ViewModel — на обычной JVM, без телефона и без сети.
  *
- * Как это устроено: репозитории — интерфейсы, и вместо настоящих (с Retrofit) сюда
+ * Как это устроено: репозитории — интерфейсы, и вместо настоящих (с сетью) сюда
  * подставлены фейки ниже, которые возвращают заранее заданные данные или кидают ошибку.
  * viewModelScope работает на Dispatchers.Main, которого на JVM нет, — подменяем его
  * тестовым диспетчером (setMain), а advanceUntilIdle() «прокручивает» все корутины.
@@ -114,6 +116,20 @@ class ViewModelTest {
         advanceUntilIdle()
 
         assertEquals("Нет связи с сервером", vm.state.value.error)
+    }
+
+    @Test
+    fun `неверный пароль — причина от сервера, а не «сессия истекла»`() = runTest(dispatcher) {
+        val vm = LoginViewModel(FakeAuth(failWith = ApiException(401, "Неверный email или пароль")))
+        vm.setEmail("a@b.c")
+        vm.setPassword("secret1")
+        vm.submit()
+        advanceUntilIdle()
+
+        assertEquals("Неверный email или пароль", vm.state.value.error)
+        // 401 без причины в теле — это истёкший токен.
+        assertEquals("Сессия истекла — войдите заново", ApiException(401, null).humanMessage())
+        assertEquals("Ошибка сервера (500)", ApiException(500, null).humanMessage())
     }
 
     @Test

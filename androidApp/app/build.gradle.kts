@@ -29,8 +29,8 @@ android {
         applicationId = "io.github.vihrea1337.devlog"
         minSdk = 26
         targetSdk = 36
-        versionCode = 4
-        versionName = "1.3.0"
+        versionCode = 5
+        versionName = "1.3.1"
         buildConfigField("String", "BASE_URL", "\"$debugBaseUrl\"")
         // Запуск UI-тестов (androidTest) на эмуляторе или телефоне.
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -39,7 +39,7 @@ android {
     buildTypes {
         release {
             // R8: выкидывает неиспользуемый код и сжимает имена — APK заметно меньше.
-            // Правила для Retrofit/kotlinx.serialization — в proguard-rules.pro.
+            // Правила для kotlinx.serialization и Ktor — в proguard-rules.pro.
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
@@ -125,10 +125,9 @@ dependencies {
     // DataStore — хранение настроек (вместо SharedPreferences): асинхронно, через Flow.
     implementation("androidx.datastore:datastore-preferences:1.1.7")
 
-    // Сеть: Retrofit (HTTP-клиент) + конвертер kotlinx.serialization (JSON <-> классы) + сам JSON.
+    // Сеть: один HTTP-клиент — Ktor Client (ядро и JSON-плагины приходят из shared/),
+    // на движке OkHttp (ниже). Retrofit убран в 1.3.1: был вторым клиентом рядом с Ktor.
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
-    implementation("com.squareup.retrofit2:retrofit:2.12.0")
-    implementation("com.squareup.retrofit2:converter-kotlinx-serialization:2.12.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
     // Драйвер SQLDelight для настоящего файла БД на Android (схема/запросы — в shared,

@@ -19,7 +19,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 // Репозитории — слой между экранами (ViewModel) и источниками данных (сеть, база).
-// ViewModel не знает про Retrofit и HTTP-коды: она просит «дай отчёты», «войди».
+// ViewModel не знает про HTTP-клиент и коды ответов: она просит «дай отчёты», «войди».
 // Каждый репозиторий — ИНТЕРФЕЙС + реализация: в юнит-тестах ViewModel подставляем
 // фейковую реализацию без сети (см. src/test). Связку интерфейс → реализация задаёт
 // RepositoryModule (@Binds).
@@ -111,8 +111,7 @@ class ReportsRepositoryImpl @Inject constructor(private val api: DevLogApi) : Re
         api.updateReport(id, UpdateReport(contentMd = contentMd, title = title))
 
     override suspend fun delete(id: String) {
-        val r = api.deleteReport(id)
-        if (!r.isSuccessful) throw retrofit2.HttpException(r)
+        api.deleteReport(id)
     }
 
     override suspend fun share(id: String): Pair<String, String> {
@@ -121,8 +120,7 @@ class ReportsRepositoryImpl @Inject constructor(private val api: DevLogApi) : Re
     }
 
     override suspend fun unshare(id: String) {
-        val r = api.unshareReport(id)
-        if (!r.isSuccessful) throw retrofit2.HttpException(r)
+        api.unshareReport(id)
     }
 }
 
