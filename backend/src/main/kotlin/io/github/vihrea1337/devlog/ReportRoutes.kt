@@ -156,43 +156,28 @@ fun Route.reportRoutes() {
     get("/r/{token}") {
         val token = call.parameters["token"]
         val report = token?.let { ReportRepository.getByShareToken(it) }
-        if (report == null) {
+        val owner = token?.let { ReportRepository.ownerByShareToken(it) }
+        if (report == null || owner == null) {
             call.respondText("Отчёт не найден", ContentType.Text.Html, HttpStatusCode.NotFound)
         } else {
-            call.respondText(renderReportPage(report), ContentType.Text.Html)
+            // Записи периода — для плиток с цифрами и графика активности. Тот же фильтр,
+            // что при сборке отчёта (период + проект), поэтому цифры совпадают с текстом.
+            val projectId = report.projectId?.let(::parseUuidOrNull)
+            val entries = EntryRepository.list(owner, LocalDate.parse(report.periodStart), LocalDate.parse(report.periodEnd), projectId)
+            val projects = ProjectRepository.list(owner).associateBy { it.id }
+            val ctx = PublicReportPage.Context(
+                authorName = UserRepository.findById(owner)?.displayName,
+                projectName = report.projectId?.let { projects[it]?.name },
+                entries = entries,
+                projectCount = entries.mapNotNull { it.projectId }.distinct().size,
+            )
+            // Адрес сервера — для картинки превью ссылки (og:image должен быть абсолютным).
+            val proto = call.request.headers["X-Forwarded-Proto"] ?: "https"
+            val origin = "$proto://${call.request.headers["Host"] ?: "localhost"}"
+            val autoPrint = call.request.queryParameters["print"] == "1"
+            call.respondText(PublicReportPage.render(report, ctx, origin, autoPrint), ContentType.Text.Html)
         }
     }
 }
 
 private fun ApplicationCall.reportId(): UUID? = parameters["id"]?.let(::parseUuidOrNull)
-
-/**
- * «2026-08-12T15:18:52.211558Z» → «12.08.2026». Страницу отчёта читает работодатель,
- * машинная метка времени в подвале ему ни о чём не говорит.
- */
-private fun humanDate(iso: String): String {
-    val date = iso.take(10).split("-")
-    return if (date.size == 3) "${date[2]}.${date[1]}.${date[0]}" else Markdown.escapeHtml(iso)
-}
-
-/** Публичная HTML-страница отчёта (Markdown → HTML). */
-private fun renderReportPage(report: ReportDto): String = """
-<!doctype html>
-<html lang="ru"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<!-- Отчёт открыт по секретной ссылке, но попасть в поисковую выдачу он не должен. -->
-<meta name="robots" content="noindex, nofollow">
-<title>${Markdown.escapeHtml(report.title)} — DevLog</title>
-<style>
-  body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;max-width:760px;margin:0 auto;padding:32px 18px;color:#1c2330;line-height:1.6;background:#fff}
-  h1{font-size:24px} h2{font-size:18px;margin-top:24px;border-top:1px solid #eee;padding-top:14px}
-  h3{font-size:15px} ul,ol{padding-left:20px} li{margin:4px 0} .foot{margin-top:40px;color:#8a92a1;font-size:12px}
-  code{font-family:ui-monospace,Consolas,monospace;font-size:13px;background:#f1f3f6;padding:1px 5px;border-radius:4px}
-  table{border-collapse:collapse;width:100%;margin:12px 0;font-size:14px;display:block;overflow-x:auto}
-  th,td{border:1px solid #e3e6ec;padding:6px 10px;text-align:left}
-  th{background:#f5f6f8;font-weight:600}
-</style></head><body>
-${Markdown.toHtml(report.contentMd)}
-<div class="foot">Сгенерировано DevLog · ${humanDate(report.createdAt)}</div>
-</body></html>
-""".trimIndent()

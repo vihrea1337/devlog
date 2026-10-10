@@ -88,6 +88,13 @@ object ReportRepository {
     }
 
     /** Публичный доступ по токену ссылки — БЕЗ фильтра по пользователю (ссылку знает получатель). */
+    /** Чей отчёт открыт по публичной ссылке — чтобы страница показала автора и цифры периода. */
+    fun ownerByShareToken(token: String): UUID? = transaction {
+        Reports.selectAll().where { Reports.shareToken eq token }
+            .map { it[Reports.userId] }
+            .singleOrNull()
+    }
+
     fun getByShareToken(token: String): ReportDto? = transaction {
         Reports.selectAll().where { Reports.shareToken eq token }
             .map { it.toDto() }
