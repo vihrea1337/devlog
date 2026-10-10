@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Значок в строке уведомлений: только белый силуэт (цвет Android игнорирует). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp"
+    android:viewportWidth="24" android:viewportHeight="24">
+    <path android:fillColor="#FFFFFF" android:fillType="evenOdd"
+        android:pathData="M6,2h12a2,2 0 0,1 2,2v16a2,2 0 0,1 -2,2h-12a2,2 0 0,1 -2,-2v-16a2,2 0 0,1 2,-2z M8,7h8v1.6h-8z M8,11h8v1.6h-8z M8,15h5v1.6h-5z" />
+</vector>

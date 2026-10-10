@@ -122,7 +122,7 @@ jobs:
         run: docker logs devlog 2>&1 | tail -50
 
   android-build:
-    name: Android — сборка debug
+    name: Android — тесты и сборка
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -136,11 +136,11 @@ jobs:
       # (Экшен android-actions/setup-android ломается на устаревшем пакете "tools".)
       - name: Принять лицензии Android SDK
         run: yes | sdkmanager --licenses > /dev/null || true
-      - name: Собрать приложение (debug)
+      - name: Юнит-тесты ViewModel и сборка (debug + release с R8)
         working-directory: androidApp
         run: |
           chmod +x ./gradlew
-          ./gradlew :app:assembleDebug --no-daemon
+          ./gradlew :app:testDebugUnitTest :app:assembleDebug :app:assembleRelease --no-daemon
       - name: Сохранить APK
         uses: actions/upload-artifact@v4
         with:
