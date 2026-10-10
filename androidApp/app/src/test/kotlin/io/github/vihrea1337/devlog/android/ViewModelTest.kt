@@ -49,10 +49,13 @@ class ViewModelTest {
 
     // --- Фейки репозиториев ---
 
-    private class FakeAuth(var failWith: Exception? = null) : AuthRepository {
+    private class FakeAuth(var failWith: Exception? = null, val demo: Boolean = true) : AuthRepository {
         var loggedInAs: String? = null
-        override suspend fun demoAvailable() = true
-        override suspend fun demoLogin() { loggedInAs = "demo" }
+        override suspend fun demoAvailable() = demo
+        override suspend fun demoLogin() {
+            failWith?.let { throw it }
+            loggedInAs = "demo"
+        }
         override suspend fun login(email: String, password: String) {
             failWith?.let { throw it }
             loggedInAs = email
@@ -125,6 +128,32 @@ class ViewModelTest {
 
         assertNull(auth.loggedInAs)
         assertEquals("Пароль — не короче 6 символов", vm.state.value.error)
+    }
+
+    @Test
+    fun `кнопка демо — только если сервер разрешил демо-вход`() = runTest(dispatcher) {
+        val withDemo = LoginViewModel(FakeAuth(demo = true))
+        val withoutDemo = LoginViewModel(FakeAuth(demo = false))
+        advanceUntilIdle()
+
+        assertTrue(withDemo.state.value.demoAvailable)
+        assertFalse(withoutDemo.state.value.demoAvailable)
+    }
+
+    @Test
+    fun `демо-вход без пароля, при ошибке — понятная причина`() = runTest(dispatcher) {
+        val auth = FakeAuth()
+        val vm = LoginViewModel(auth)
+        vm.demoLogin()
+        advanceUntilIdle()
+        assertEquals("demo", auth.loggedInAs)
+        assertNull(vm.state.value.error)
+
+        val offline = LoginViewModel(FakeAuth(failWith = IOException("timeout")))
+        offline.demoLogin()
+        advanceUntilIdle()
+        assertEquals("Нет связи с сервером", offline.state.value.error)
+        assertFalse(offline.state.value.isBusy)
     }
 
     // --- Отчёты ---

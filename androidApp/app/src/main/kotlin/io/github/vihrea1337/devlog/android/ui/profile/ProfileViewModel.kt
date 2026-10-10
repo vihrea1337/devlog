@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import io.github.vihrea1337.devlog.ActivityStatsDto
 import io.github.vihrea1337.devlog.ImportResultDto
+import io.github.vihrea1337.devlog.EntryDto
 import io.github.vihrea1337.devlog.ProjectDto
 import io.github.vihrea1337.devlog.UserDto
 import io.github.vihrea1337.devlog.android.data.AuthRepository
@@ -38,6 +39,34 @@ enum class ImportPeriod(val label: String, val days: Long) {
 
 /** Доля проекта во времени: имя, цвет, минуты. */
 data class ProjectShare(val name: String, val color: String?, val minutes: Int)
+
+/**
+ * «Куда уходит время»: минуты по проектам и частые темы (теги от ИИ).
+ * Чистый расчёт без Android и корутин — поэтому покрыт обычными юнит-тестами.
+ */
+data class TimeBreakdown(
+    val shares: List<ProjectShare> = emptyList(),
+    val topTags: List<Pair<String, Int>> = emptyList(),
+) {
+    companion object {
+        fun from(entries: List<EntryDto>, projects: List<ProjectDto>, maxTags: Int = 10): TimeBreakdown {
+            val byProject = projects.associateBy { it.id }
+            // Только записи с указанным временем: «0 минут» не должно рисовать дугу в кольце.
+            val shares = entries.filter { (it.timeSpentMin ?: 0) > 0 }
+                // Проект, которого уже нет (удалили), считаем как «без проекта» — иначе
+                // в легенде было бы две одинаковые строки «Без проекта».
+                .groupBy { e -> e.projectId?.let { byProject[it] } }
+                .map { (p, list) -> ProjectShare(p?.name ?: "Без проекта", p?.color, list.sumOf { it.timeSpentMin ?: 0 }) }
+                .sortedByDescending { it.minutes }
+            // Теги нормализуем: «Android» и « android» — одна и та же тема.
+            val topTags = entries.flatMap { it.structured?.tags.orEmpty() }
+                .map { it.trim().lowercase() }.filter { it.isNotEmpty() }
+                .groupingBy { it }.eachCount()
+                .entries.sortedByDescending { it.value }.take(maxTags).map { it.key to it.value }
+            return TimeBreakdown(shares, topTags)
+        }
+    }
+}
 
 data class ProfileUiState(
     val user: UserDto? = null,
@@ -85,25 +114,14 @@ class ProfileViewModel @Inject constructor(
                 val projects = runCatching { projectsRepo.projects() }.getOrDefault(emptyList())
                 // Разбивка по проектам и темам — по локальному кэшу записей (работает и без сети).
                 val all = withContext(Dispatchers.IO) { entries.entries().first() }
-                val byProject = projects.associateBy { it.id }
-                val shares = all.filter { (it.timeSpentMin ?: 0) > 0 }
-                    .groupBy { it.projectId }
-                    .map { (pid, list) ->
-                        val p = pid?.let { byProject[it] }
-                        ProjectShare(p?.name ?: "Без проекта", p?.color, list.sumOf { it.timeSpentMin ?: 0 })
-                    }
-                    .sortedByDescending { it.minutes }
-                val topTags = all.flatMap { it.structured?.tags.orEmpty() }
-                    .map { it.trim().lowercase() }.filter { it.isNotEmpty() }
-                    .groupingBy { it }.eachCount()
-                    .entries.sortedByDescending { it.value }.take(10).map { it.key to it.value }
+                val time = TimeBreakdown.from(all, projects)
                 _state.update {
                     it.copy(
                         user = user,
                         stats = stats,
                         projects = projects,
-                        shares = shares,
-                        topTags = topTags,
+                        shares = time.shares,
+                        topTags = time.topTags,
                         isLoading = false,
                         // Поле логина заполняем один раз, чтобы не затирать то, что человек уже печатает.
                         githubLogin = it.githubLogin.ifEmpty { user.githubLogin.orEmpty() },
