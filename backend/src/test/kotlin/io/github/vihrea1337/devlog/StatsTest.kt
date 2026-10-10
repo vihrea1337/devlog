@@ -1,6 +1,7 @@
 package io.github.vihrea1337.devlog
 
 import io.ktor.client.HttpClient
+import io.ktor.client.request.delete
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
@@ -107,6 +108,26 @@ class StatsTest {
         assertEquals(3, stats.totalEntries, "чужая запись не должна попасть в статистику")
         assertEquals(2, stats.activeDays)
         assertEquals(2, stats.currentStreak)
+    }
+
+    @Test
+    fun `удалённые записи в календарь не попадают`() = testApplication {
+        application { module() }
+        val mine = token(client, "stats-del@b.co")
+        val today = LocalDate.now().toString()
+        addEntry(client, mine, today, "останется")
+        val created = client.post("/api/entries") {
+            header(HttpHeaders.Authorization, "Bearer $mine")
+            contentType(ContentType.Application.Json)
+            setBody("""{"occurredOn":"$today","rawText":"удалю"}""")
+        }
+        val id = json.decodeFromString<EntryDto>(created.bodyAsText()).id
+        client.delete("/api/entries/$id") { header(HttpHeaders.Authorization, "Bearer $mine") }
+
+        val res = client.get("/api/stats/activity") { header(HttpHeaders.Authorization, "Bearer $mine") }
+        val stats = json.decodeFromString<ActivityStatsDto>(res.bodyAsText())
+        assertEquals(1, stats.totalEntries, "удалённая запись не должна считаться")
+        assertEquals(1, stats.days[today])
     }
 
     @Test

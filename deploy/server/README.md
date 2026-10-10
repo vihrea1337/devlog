@@ -77,10 +77,14 @@ cd /opt/devlog && docker compose up -d --build devlog-backend
 Страница `/install.html` ссылается на `/download/DevLog.apk` — этот файл отдаёт Caddy из папки
 `/opt/devlog/downloads` (бэкенд пересобирать не нужно):
 ```powershell
-cd androidApp; .\gradlew.bat :app:assembleDebug; cd ..
-scp androidApp/app/build/outputs/apk/debug/app-debug.apk vps:/opt/devlog/downloads/DevLog.apk
+cd androidApp; .\gradlew.bat :app:assembleRelease; cd ..
+scp androidApp/app/build/outputs/apk/release/app-release.apk solmu-new:/opt/devlog/downloads/DevLog.apk
 ```
-Версию и размер в тексте `install.html` поправить руками.
+С версии 1.2.0 раздаётся **release** (R8: ~2 МБ вместо ~12). Подписан debug-ключом этого ПК —
+тем же, что и прежние APK, поэтому ставится поверх старой версии. Проверить перед заменой:
+`apksigner verify --print-certs <apk>` у старого и нового файла — SHA-256 сертификата должен
+совпасть. Собранный на другой машине (или в CI) APK подписан ДРУГИМ ключом и поверх не встанет.
+Версию и размер в тексте `install.html` поправить руками (и передеплоить бэкенд — страница в нём).
 
 ## Пример отчёта (`/demo`)
 

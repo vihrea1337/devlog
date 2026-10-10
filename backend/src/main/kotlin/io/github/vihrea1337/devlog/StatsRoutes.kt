@@ -6,6 +6,7 @@ import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
 import kotlinx.serialization.Serializable
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
+import org.jetbrains.exposed.sql.SqlExpressionBuilder.isNull
 import org.jetbrains.exposed.sql.and
 import org.jetbrains.exposed.sql.count
 import org.jetbrains.exposed.sql.transactions.transaction
@@ -42,6 +43,9 @@ object StatsRepository {
                 .select(Entries.occurredOn, countColumn)
                 .where {
                     (Entries.userId eq userId) and
+                        // Удалённые записи (мягкое удаление) не в счёт: раньше календарь
+                        // показывал «69 записей», когда в ленте их было 67.
+                        Entries.deletedAt.isNull() and
                         (Entries.occurredOn greaterEq from) and
                         (Entries.occurredOn lessEq to)
                 }
