@@ -37,7 +37,17 @@ fun Route.authRoutes() {
             return@post
         }
         val name = body.displayName.trim().ifBlank { email.substringBefore('@') }
-        val user = UserRepository.create(email, Passwords.hash(body.password), name)
+        // Проверка выше не спасает от гонки: два одновременных запроса с одним email оба
+        // видят «такого нет» и оба вставляют — второй упирается в уникальный индекс базы.
+        // Раньше это был 500 «Внутренняя ошибка»; теперь — тот же понятный 409.
+        val user = runCatching { UserRepository.create(email, Passwords.hash(body.password), name) }
+            .getOrElse { e ->
+                if (UserRepository.findByEmail(email) != null) {
+                    call.respond(HttpStatusCode.Conflict, ErrorResponse("Пользователь с таким email уже есть"))
+                    return@post
+                }
+                throw e
+            }
         call.respond(AuthResponse(JwtService.makeToken(user.id, user.email), user.toDto()))
     }
 

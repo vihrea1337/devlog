@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DevLog — дневник разработчика</title>
+<meta name="description" content="Сырые заметки о работе → структурированный дневник и отчёт для работодателя. ИИ, импорт коммитов GitHub/GitLab, Android.">
+<!-- Витрина + «как начать». APK лежит не в бэкенде, а в папке downloads на сервере —
+     его отдаёт Caddy по адресу /download/DevLog.apk (см. deploy/server/Caddyfile).
+     Демо-анимация — чистый CSS, без скриптов; при «уменьшить движение» в системе
+     анимации отключены. -->
+<link rel="stylesheet" href="./info.css">
+<style>
+  .hero {
+    position: relative; overflow: hidden; border-radius: 18px; padding: 28px 22px 24px;
+    margin-bottom: 18px; color: #fff;
+    background:
+      radial-gradient(120% 90% at 100% 0%, rgba(255,255,255,.16) 0%, transparent 55%),
+      linear-gradient(135deg, #1e3a8a 0%, #3b6ef5 55%, #6f97ff 100%);
+  }
+  .hero::before { /* декоративная «сетка коммитов» на фоне */
+    content: ""; position: absolute; right: -40px; bottom: -40px; width: 260px; height: 160px;
+    background-image: radial-gradient(rgba(255,255,255,.18) 3px, transparent 3.5px);
+    background-size: 16px 16px; transform: rotate(-8deg);
+  }
+  .hero > * { position: relative; }
+  .hero .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; }
+  .hero .brand .logo { width: 30px; height: 30px; border-radius: 8px; background: rgba(255,255,255,.95);
+    color: #1e3a8a; display: grid; place-items: center; font-weight: 800; font-size: 14px; }
+  .hero h1 { font-size: 30px; line-height: 1.2; margin: 14px 0 8px; letter-spacing: -.01em; }
+  .hero .sub { margin: 0; color: rgba(255,255,255,.9); max-width: 520px; }
+  .hero-grid { display: grid; gap: 22px; align-items: center; }
+  @media (min-width: 680px) { .hero-grid { grid-template-columns: 1fr 320px; } }
+  @media (max-width: 420px) { .hero h1 { font-size: 25px; } }
+
+  /* Демо: сырая заметка → структурированная запись. */
+  .demo { display: grid; gap: 10px; width: 100%; max-width: 340px; justify-self: center; }
+  .raw, .structured { border-radius: 14px; box-shadow: 0 8px 22px rgba(0,0,0,.2); }
+  .raw {
+    background: rgba(15, 23, 42, .78); color: #dbe4ff; padding: 11px 14px;
+    font: 13px/1.5 ui-monospace, "Cascadia Mono", Consolas, monospace;
+  }
+  .raw .caret { display: inline-block; width: 2px; height: 1.1em; background: #8fb0ff;
+    vertical-align: text-bottom; margin-left: 2px; animation: caret .8s step-end infinite; }
+  .structured {
+    background: #fff; color: #1c2330; padding: 12px 14px; font-size: 13.5px; line-height: 1.45;
+    animation: pop 9s ease-out infinite;
+  }
+  .structured b { display: block; font-size: 14.5px; margin-bottom: 6px; }
+  .structured .row { display: flex; gap: 6px; margin: 3px 0; }
+  .structured .k { color: #3b6ef5; font-weight: 700; min-width: 70px; }
+  .tags { margin-top: 8px; display: flex; gap: 5px; flex-wrap: wrap; }
+  .tag { font-size: 11.5px; font-weight: 600; color: #3b6ef5; background: #eef2fe; border-radius: 999px; padding: 1px 8px; }
+  @keyframes caret { 50% { border-color: transparent; } }
+  @keyframes pop {
+    0%, 34% { opacity: 0; transform: translateY(8px) scale(.97); }
+    42%, 92% { opacity: 1; transform: none; }
+    100% { opacity: 0; transform: translateY(-4px); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .raw .caret, .structured { animation: none; }
+  }
+
+  .features { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin: 0 0 18px; }
+  .feature { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+  .feature .f-ico { font-size: 22px; }
+  .feature b { display: block; margin: 4px 0 2px; }
+  .feature span { color: var(--muted); font-size: 14px; line-height: 1.4; }
+  h2.section { font-size: 20px; margin: 26px 0 12px; }
+</style>
+</head>
+<body>
+<main>
+  <section class="hero">
+    <div class="brand"><span class="logo" aria-hidden="true">DL</span> DevLog</div>
+    <div class="hero-grid">
+      <div>
+        <!-- &nbsp; — чтобы короткие слова не отрывались от следующих при переносе. -->
+        <h1>Коммиты говорят, что&nbsp;изменилось. DevLog&nbsp;— зачем и&nbsp;почему.</h1>
+        <p class="sub">Бросьте в конце дня пару строк как есть — ИИ разберёт их на шаги, решения
+          и проблемы, а в конце месяца соберёт отчёт для работодателя по ссылке.</p>
+      </div>
+      <div class="demo" role="img" aria-label="Пример: заметка «перевёл миграции на flyway, fat-jar терял плагины» превращается в структурированную запись с решением, проблемой и тегами">
+        <div class="raw">перевёл миграции на flyway. на деплое фат-жар терял плагины,
+          миграции молча пропускались — перешёл на distTar<span class="caret"></span></div>
+        <div class="structured">
+          <b>Перевёл схему БД на миграции Flyway</b>
+          <div class="row"><span class="k">Решение</span><span>Flyway вместо SchemaUtils — схему на проде нельзя пересоздавать</span></div>
+          <div class="row"><span class="k">Проблема</span><span>fat-jar терял плагины → сборка через distTar</span></div>
+          <div class="tags"><span class="tag">flyway</span><span class="tag">postgres</span><span class="tag">gradle</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="features">
+    <div class="feature"><span class="f-ico">✍️</span><b>Пишите как есть</b><span>сокращения и опечатки — не проблема, структуру добирает ИИ</span></div>
+    <div class="feature"><span class="f-ico">📄</span><b>Отчёт за минуту</b><span>результаты, решения и проблемы по темам — и ссылка для работодателя</span></div>
+    <div class="feature"><span class="f-ico">🔗</span><b>Импорт коммитов</b><span>GitHub и GitLab: дневник начинает заполняться сам</span></div>
+    <div class="feature"><span class="f-ico">📱</span><b>Android и офлайн</b><span>записи с телефона без сети уедут на сервер сами</span></div>
+  </div>
+
+  <h2 class="section">Как начать</h2>
+
+  <section class="card" id="web">
+    <h2>Браузер</h2>
+    <p class="meta">Основная версия: записи, отчёты, импорт GitHub/GitLab и текстовых логов</p>
+    <a class="btn" href="./">Открыть DevLog</a>
+    <a class="btn secondary" href="./demo">Посмотреть пример отчёта</a>
+    <ol>
+      <li>Зарегистрируйтесь по email и паролю (не короче 6 символов).</li>
+      <li>Напишите заметку о сегодняшней работе — через несколько секунд ИИ разберёт её.</li>
+      <li>В разделе «Отчёты» выберите период и нажмите «Собрать», затем «Поделиться» — ссылку
+        можно отправить без регистрации получателя.</li>
+    </ol>
+  </section>
+
+  <section class="card" id="android">
+    <h2>Android</h2>
+    <p class="meta">Android 8.0 и новее · около 12 МБ · версия 1.1.0</p>
+    <a class="btn" href="./download/DevLog.apk" download="DevLog-1.1.0.apk">Скачать APK</a>
+    <ol>
+      <li>Откройте скачанный файл и разрешите установку из браузера или «Файлов».</li>
+      <li>Если Google Play Protect предупредит о неизвестном приложении — <b>«Всё равно установить»</b>:
+        DevLog не публикуется в Google Play.</li>
+      <li>Войдите тем же email и паролем, что на сайте. Лента, проекты и отчёты — общие.</li>
+    </ol>
+  </section>
+
+  <div class="note">
+    <b>Это pet-проект для портфолио.</b> Сервис работает «как есть»: он может быть временно
+    недоступен, а данные — очищены. Не храните здесь единственную копию важного.
+  </div>
+
+  <footer>
+    <a href="./privacy.html">Конфиденциальность</a> ·
+    <a href="./terms.html">Условия использования</a> ·
+    <a href="https://github.com/vihrea1337/devlog">Исходный код</a> ·
+    <a href="./">Открыть DevLog</a>
+  </footer>
+</main>
+</body>
+</html>

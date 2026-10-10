@@ -83,6 +83,13 @@ class MarkdownTest {
     }
 
     @Test
+    fun `жирный текст с кодом внутри`() {
+        val html = Markdown.toHtml("- **Лимит 8000 токенов и `retry-after`** — защита от 429")
+        assertTrue(html.contains("<strong>Лимит 8000 токенов и <code>retry-after</code></strong>"), html)
+        assertFalse(html.contains("**"), html)
+    }
+
+    @Test
     fun `нумерованный список`() {
         val html = Markdown.toHtml("1. первый\n2. второй\n\n- маркер")
         assertTrue(html.contains("<ol>\n<li>первый</li>\n<li>второй</li>\n</ol>"), html)

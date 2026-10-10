@@ -95,17 +95,20 @@ object Markdown {
      * Текст уже экранирован escapeHtml, поэтому код вставляем как есть.
      */
     private fun inline(s: String): String {
-        val parts = s.split('`')
-        // Нечётное число кавычек → последняя без пары: её частью кода не считаем.
-        val lastClosed = if (parts.size % 2 == 0) parts.size - 2 else parts.size - 1
-        return parts.mapIndexed { idx, part ->
-            when {
-                idx % 2 == 1 && idx <= lastClosed -> "<code>$part</code>"
-                idx % 2 == 1 -> "`" + emphasis(part)
-                else -> emphasis(part)
-            }
-        }.joinToString("")
+        // Код прячем за метками-заглушками (\u0000номер\u0000 — такого символа в тексте не бывает),
+        // размечаем жирный/курсив по ВСЕЙ строке и возвращаем код на место. Если резать строку
+        // по кавычкам и размечать куски отдельно, ломается «**жирное с `кодом` внутри**».
+        val codes = mutableListOf<String>()
+        val masked = codeSpan.replace(s) { m ->
+            codes += m.groupValues[1]
+            "\u0000${codes.size - 1}\u0000"
+        }
+        return placeholder.replace(emphasis(masked)) { m -> "<code>${codes[m.groupValues[1].toInt()]}</code>" }
     }
+
+    /** `код` — парные обратные кавычки; непарная остаётся обычным символом. */
+    private val codeSpan = Regex("`([^`]+)`")
+    private val placeholder = Regex("\u0000(\\d+)\u0000")
 
     private fun emphasis(s: String): String =
         italicRegex.replace(boldRegex.replace(s) { "<strong>${it.groupValues[1]}</strong>" }) {

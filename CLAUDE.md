@@ -12,7 +12,10 @@
 ## Формат работы
 - **Код пишет Claude** (как в Expenses/Suomeksi), с подробными русскими комментариями «для junior».
   Пользователь тестирует и разбирает готовое.
-- Инфраструктурные команды на сервере выполняет **пользователь сам** (у Claude нет доступа к серверу).
+- **Доступ к серверу (с 2026-10-10):** пользователь выдал Claude SSH-ключ к текущему серверу
+  (алиас `solmu-new` в `~/.ssh/config` на ПК; IP в репозиторий не пишем). Claude сам деплоит и
+  чинит DevLog в `/opt/devlog`. Сервер ОБЩИЙ: проект Solmu (`/opt/solmu-node`, порты 80/443)
+  и Expenses (`/opt/expenses`, порт 34443) — их не трогать.
 - Коммиты **без** трейлера `Co-Authored-By`.
 - Пользователь — junior, объяснять как новичку, расшифровывать термины.
 
@@ -35,10 +38,31 @@
 - **Клиенты:** Kotlin Multiplatform + Compose Multiplatform (Android/iOS/Desktop из общего кода).
   Веб на старте — HTML-страница, которую отдаёт сам бэкенд.
 - **Авторизация:** JWT, пароли хешируются, изоляция пользователей (multi-tenant) с Фазы 1.
-- **Деплой:** Docker на сервере брата `/root/app/lev`, HTTPS через Caddy + DuckDNS
-  (порт из диапазона 34000–35000), по образцу Expenses.
+- **Деплой:** Docker на общем сервере в `/opt/devlog`, HTTPS через Caddy + DuckDNS на порту 34444
+  (80/443 заняты Solmu), по образцу Expenses. Runbook — `deploy/server/README.md`.
 
-## Статус (на 2026-08-13)
+## Статус (на 2026-10-10)
+
+**Прод:** `https://vihreaschedule.duckdns.org:34444` — переехал 2026-10-10 на общий сервер
+(`/opt/devlog`), база создана с нуля. Задеплоено ВСЁ из `main`. Страницы: `/install.html`
+(витрина + APK), `/privacy.html`, `/terms.html`, `/demo` → пример отчёта.
+**Демо-аккаунт для показа:** `demo@devlog.app` (пароль у пользователя, в репозиторий НЕ писать — репо публичный) — 22 записи в трёх проектах
+(DevLog, Expenses, «Работа (NDA)» с выключенным ИИ) и два отчёта с публичными ссылками.
+
+**Сделано 2026-10-10 (Claude, автономно):** отчёт по темам вместо пересказа по дням (см.
+`ReportGenerator.kt`, `AiProcessor.reportPrompt`), отдельная модель отчётов gpt-oss-120b,
+устойчивость очереди к 429 Groq, фолбэк при 400 json_validate_failed, закрыта утечка записей
+NDA-проектов в Groq при сборке отчёта, 409 вместо 500 при гонке регистрации, Markdown `код`;
+Android — автосинхронизация при появлении сети и понятные ошибки входа (оба недочёта ниже
+ЗАКРЫТЫ); CI со смоук-тестом Docker-образа, Release и Deploy workflow. Тестов: 174 + shared.
+Подробно — `CHANGELOG.md`. Выводы по качеству ИИ: бесплатная модель всё ещё иногда
+додумывает (план выдаёт за сделанное, придумывает причины) — промпт это сильно сократил,
+но отчёт перед отправкой стоит перечитать; функция правки отчёта для этого и есть.
+
+---
+
+## Статус (на 2026-08-13, история)
+
 
 **Прод:** `https://vihreaschedule.duckdns.org:34444` — сервер брата переустановлен и
 развёрнут с нуля (Ubuntu 24.04, Docker, Caddy+DuckDNS). **База пустая**: старые записи
@@ -225,7 +249,7 @@ SQLDelight), импорт GitLab (миграция V8). При следующе�
    активность, свериться, что коммиты и даты верные) — токена для этого не было.
 
 ## Известные мелкие недочёты (найдено при живой проверке на телефоне, 2026-09-04)
-Не чиним сейчас, откладываем на потом.
+**Оба закрыты 2026-10-10** (`ErrorMessages.kt`, `FeedScreen.kt` — NetworkCallback). Описание — для истории.
 
 1. **Регистрация с коротким паролем не объясняет причину.** `LoginScreen.kt` — `catch (e:
    Exception)` на кнопке входа/регистрации всегда показывает один и тот же общий текст
@@ -249,9 +273,9 @@ SQLDelight), импорт GitLab (миграция V8). При следующе�
 ## Деплой / редеплой
 - Файлы: `deploy/server/` (docker-compose + Caddyfile + Dockerfile'ы + README-runbook).
 - Секреты на сервере (не в git): `.env` (DB_PASSWORD, DUCKDNS_TOKEN, DEVLOG_DOMAIN, DEVLOG_PORT),
-  `devlog.env` (GROQ_API_KEY, JWT_SECRET). Домен — отдельный DuckDNS `vihreaschedule.duckdns.org`.
+  `devlog.env` (GROQ_API_KEY, JWT_SECRET, DEMO_REPORT_TOKEN). Домен — отдельный DuckDNS `vihreaschedule.duckdns.org`.
 - Обновить бэкенд: `gradlew distTar` → `scp backend/build/distributions/devlog-backend-0.1.0.tar`
-  в `/root/app/lev/devlog/backend/devlog-backend.tar` → на сервере
+  в `/opt/devlog/backend/devlog-backend.tar` (`scp ... solmu-new:...`) → на сервере
   `docker compose up -d --build devlog-backend`. **Именно distTar, а не fat-jar:**
   в fat-jar склеиваются файлы `META-INF/services`, Flyway теряет плагины и МОЛЧА
   пропускает миграции — сервер поднимается с пустой базой.

@@ -10,6 +10,8 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import io.ktor.server.testing.testApplication
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.serialization.json.Json
 import org.jetbrains.exposed.sql.Database
 import org.jetbrains.exposed.sql.SchemaUtils
@@ -95,5 +97,25 @@ class AuthTest {
             setBody(payload)
         }
         assertEquals(HttpStatusCode.Conflict, second.status)
+    }
+
+    @Test
+    fun `одновременные регистрации одного email — один успех, остальные 409, без 500`() = testApplication {
+        application { module() }
+        val payload = """{"email":"race@b.co","password":"secret1","displayName":"R"}"""
+        // Пачка параллельных запросов: так ловится гонка «проверил, что email свободен →
+        // вставил», которую последовательный тест выше не видит (найдена на живом сервере).
+        val statuses = kotlinx.coroutines.coroutineScope {
+            List(8) {
+                async {
+                    client.post("/api/auth/register") {
+                        contentType(ContentType.Application.Json)
+                        setBody(payload)
+                    }.status
+                }
+            }.awaitAll()
+        }
+        assertEquals(1, statuses.count { it == HttpStatusCode.OK }, "$statuses")
+        assertTrue(statuses.all { it == HttpStatusCode.OK || it == HttpStatusCode.Conflict }, "$statuses")
     }
 }

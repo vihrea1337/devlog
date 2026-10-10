@@ -32,7 +32,7 @@ private data class GroqRequest(
     val temperature: Double = 0.2,
     @SerialName("response_format") val responseFormat: ResponseFormat? = null,
     // Модели gpt-oss "думают" перед ответом, и эти скрытые рассуждения тоже тратят лимит
-    // токенов в минуту. "low" — для простых задач (разбор одной заметки), "medium" — для отчёта.
+    // токенов в минуту. "medium" — и для разбора заметки, и для отчёта (на "high" ответ съедают рассуждения).
     @SerialName("reasoning_effort") val reasoningEffort: String? = null,
     @SerialName("max_completion_tokens") val maxCompletionTokens: Int? = null,
 )
@@ -100,12 +100,17 @@ object AiProcessor : AiStructurer {
         "steps" — массив: что сделано. Каждый пункт — законченное действие с конкретикой
           (технологии, названия, числа из заметки). Объединяй мелочи, не дроби;
         "decisions" — массив: принятые решения В ФОРМЕ «что выбрал — почему» (если причина есть в заметке);
-        "problems" — массив: проблемы В ФОРМЕ «что сломалось → в чём была причина → как решил»;
+        "problems" — массив: проблемы В ФОРМЕ «что сломалось → в чём была причина → как решил».
+          Только то, что РЕАЛЬНО сломалось. Меры предосторожности («если сервис упадёт — отдаём
+          черновик») и защитные проверки («сервер не стартует с дефолтным секретом») — это
+          решения (decisions), а не проблемы;
         "outcome" — итог дня одной-двумя фразами: что теперь работает / что это дало;
         "tags" — 3–6 коротких тегов в нижнем регистре: технологии и темы.
-        Правила: пиши по-русски (термины и названия — как в заметке), от первого лица
-        («перевёл», «починил»), без канцелярита. Ничего не выдумывай: чего нет в заметке —
-        пустой массив или пустая строка. Решения и проблемы не дублируй в steps.
+        Правила: пиши грамотно по-русски (термины и названия — как в заметке, английские слова
+        не склоняй русскими окончаниями), от первого лица («перевёл», «починил»), без канцелярита.
+        Ничего не выдумывай: чего нет в заметке — пустой массив или пустая строка. Планы
+        («надо сделать») — не шаги: их место в outcome как «дальше: …». Решения и проблемы
+        не дублируй в steps.
     """.trimIndent()
 
     init {
@@ -123,6 +128,20 @@ object AiProcessor : AiStructurer {
      */
     override suspend fun structure(rawText: String): StructuredDto {
         check(enabled) { "Обработка ИИ выключена на сервере (нет ключа GROQ_API_KEY)" }
+        return try {
+            requestStructure(rawText, strictJson = true)
+        } catch (e: JsonModeRejected) {
+            // В строгом JSON-режиме Groq сам проверяет ответ модели и на битом JSON отвечает
+            // 400 json_validate_failed (бывает на длинных заметках). Повторяем без строгого
+            // режима: JSON из обычного ответа достанет parseStructured — он к этому готов.
+            requestStructure(rawText, strictJson = false)
+        }
+    }
+
+    /** Groq отверг ответ модели в строгом JSON-режиме (400 json_validate_failed). */
+    private class JsonModeRejected : RuntimeException()
+
+    private suspend fun requestStructure(rawText: String, strictJson: Boolean): StructuredDto {
         val response = client.post(GROQ_URL) {
             header(HttpHeaders.Authorization, "Bearer $apiKey")
             contentType(ContentType.Application.Json)
@@ -133,19 +152,29 @@ object AiProcessor : AiStructurer {
                         GroqMessage("system", systemPrompt),
                         GroqMessage("user", rawText),
                     ),
-                    responseFormat = ResponseFormat("json_object"),
-                    reasoningEffort = "low",
+                    responseFormat = if (strictJson) ResponseFormat("json_object") else null,
+                    // "medium": на "low" маленькая модель писала коряво («dedupировал», опечатки),
+                    // а эти сводки видны в ленте и хронологии отчёта. Лимит 429 воркер переживает.
+                    reasoningEffort = "medium",
                 ),
             )
         }
         if (response.status.value == 429) throw rateLimited(response.headers["retry-after"], response.bodyAsText())
         if (!response.status.isSuccess()) {
+            val body = response.bodyAsText()
+            if (strictJson && response.status.value == 400 && "json_validate_failed" in body) throw JsonModeRejected()
             // Например: кончилась квота Groq, неверный ключ, слишком длинный текст.
-            error("Groq ответил ${response.status.value}: ${response.bodyAsText().take(200)}")
+            error("Groq ответил ${response.status.value}: ${body.take(200)}")
         }
-        val content = response.body<GroqResponse>().choices.firstOrNull()?.message?.content
-            ?: error("Groq вернул пустой ответ")
-        return parseStructured(content) ?: error("Не удалось разобрать JSON из ответа модели")
+        val choice = response.body<GroqResponse>().choices.firstOrNull()
+        val content = choice?.message?.content?.takeIf { it.isNotBlank() }
+            ?: error("Groq вернул пустой ответ (finish_reason=${choice?.finishReason})")
+        // В тексте ошибки — почему модель остановилась и чем начинался ответ: эта строка
+        // видна пользователю в карточке записи и в логах, по ней сразу понятно, что не так.
+        return parseStructured(content) ?: error(
+            "Не удалось разобрать JSON из ответа модели (finish_reason=${choice.finishReason}, " +
+                "начало ответа: ${content.take(120).replace('\n', ' ')})",
+        )
     }
 
     /**
@@ -198,16 +227,30 @@ object AiProcessor : AiStructurer {
         Только если в записях есть недоделки, найденные недочёты или планы. Иначе раздел не пиши.
 
         Правила:
+        - Каждое утверждение должно опираться на конкретную запись. Сомневаешься — не пиши.
+          Не добавляй последствий, которых в записях нет («без простоев», «сервис не отвечал»).
+        - Записи идут по времени, и поздние важнее ранних: если в более поздней записи сказано,
+          что недочёт исправлен, — он идёт в результаты, а НЕ в «Что дальше».
+        - Groq — это сервис, а gpt-oss-20b/120b — модели на нём; не пиши «Groq заменён на модель».
         - НЕ пересказывай по дням и не начинай пункты с дат — хронологию добавят отдельно.
         - Никаких оценок и обещаний, которых нет в записях: «надёжный», «безопасный»,
           «готово к масштабированию», «стабильно работает». Эффект пиши, только если он
           прямо следует из записи; если не следует — просто опиши, что сделано.
         - Точно передавай причины и следствия: если баг «терял» записи — не пиши
           «дублировал»; если импорт берёт коммиты — не называй его «восстановлением данных».
+        - Причину решения пиши, ТОЛЬКО если она есть в записях. Нет причины — просто назови
+          решение, не додумывай «потому что» и не придумывай альтернатив.
+        - Планы и выводы («надо настроить», «стоит сделать») — это НЕ сделанная работа:
+          им место только в «Что дальше».
+        - Защитная проверка — не баг: «сервер не стартует с дефолтным секретом» — это добавленная
+          защита, а не проблема.
+        - Английские термины не склоняй русскими окончаниями («dedupировал» — нельзя, пиши
+          «убрал дубли»).
         - Ничего не выдумывай: только факты из записей. Сохраняй конкретику — названия
           технологий, числа, имена файлов и сервисов.
         - Не повторяй один и тот же факт в разных разделах.
-        - Пиши по-русски, от первого лица («перевёл», «нашёл и починил»), живо и по делу,
+        - Пиши по-русски, от первого лица ЕДИНСТВЕННОГО числа («перевёл», «нашёл и починил»;
+          не «мы»), живо и по делу,
           без канцелярита («было осуществлено», «произведена работа по»).
         - Заголовок отчёта и период не пиши — они уже есть.
     """.trimIndent()
@@ -255,7 +298,7 @@ object AiProcessor : AiStructurer {
                         GroqMessage("system", reportPrompt),
                         GroqMessage("user", digest),
                     ),
-                    temperature = 0.3,
+                    temperature = 0.2, // ниже — меньше «творчества», а в отчёте нужна точность
                     // "medium", а не "high": на high модель тратит весь бюджет ответа на скрытые
                     // рассуждения и возвращает пустой текст (finish_reason=length) — проверено.
                     reasoningEffort = "medium",

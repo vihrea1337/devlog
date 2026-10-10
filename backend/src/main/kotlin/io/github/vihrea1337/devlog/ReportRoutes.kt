@@ -6,6 +6,7 @@ import io.ktor.server.application.ApplicationCall
 import io.ktor.server.auth.authenticate
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
+import io.ktor.server.response.respondRedirect
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.delete
@@ -138,6 +139,17 @@ fun Route.reportRoutes() {
             ReportRepository.setShareToken(call.userId(), id, null)
             call.respond(HttpStatusCode.NoContent)
         }
+    }
+
+    /**
+     * Короткий адрес «пример отчёта» для страницы установки: /demo → публичная ссылка
+     * демо-отчёта. Какой именно отчёт показывать — задаёт владелец сервера переменной
+     * DEMO_REPORT_TOKEN (share-токен отчёта); не задана — ведём на страницу установки.
+     * Так ссылку на странице не надо менять при пересборке демо-отчёта.
+     */
+    get("/demo") {
+        val token = System.getenv("DEMO_REPORT_TOKEN")?.trim()?.ifEmpty { null }
+        call.respondRedirect(if (token != null) "/r/$token" else "/install.html")
     }
 
     // Публичный просмотр отчёта по ссылке — БЕЗ токена (ссылку знает получатель).

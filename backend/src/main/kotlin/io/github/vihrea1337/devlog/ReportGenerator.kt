@@ -75,7 +75,7 @@ object ReportGenerator {
      */
     fun digest(entries: List<EntryDto>, projects: Map<String, ProjectDto> = emptyMap()): String {
         fun render(maxSteps: Int): String = buildString {
-            append("Записи разработчика за период (").append(entries.size).append(" шт.):\n")
+            append("Записи разработчика за период (").append(entries.size).append(" шт., от ранних к поздним):\n")
             for (e in entries) {
                 append("\n### ").append(e.occurredOn)
                 e.projectId?.let { projects[it]?.name }?.let { append(" · проект «").append(it).append("»") }

@@ -1,6 +1,6 @@
-# DevLog на сервере брата (в /root/app/lev/devlog). Три контейнера в своей сети;
-# наружу торчит ТОЛЬКО Caddy на порту ${DEVLOG_PORT} (HTTPS). Стек брата и Expenses
-# не затрагиваем — свои имена контейнеров (devlog-*), своя сеть, свои тома.
+# DevLog на сервере (в /opt/devlog). Три контейнера в своей сети;
+# наружу торчит ТОЛЬКО Caddy на порту ${DEVLOG_PORT} (HTTPS). Соседние проекты на сервере
+# (Solmu, Expenses) не затрагиваем — свои имена контейнеров (devlog-*), своя сеть, свои тома.
 #
 # Порядок запуска — см. README.md рядом. Значения ${...} берутся из файла .env.
 services:
@@ -22,7 +22,7 @@ services:
     restart: unless-stopped
     depends_on: [devlog-pg]
     env_file:
-      - ./devlog.env            # секреты: GROQ_API_KEY, JWT_SECRET (+ по желанию GROQ_MODEL, AI_DAILY_LIMIT)
+      - ./devlog.env            # секреты: GROQ_API_KEY, JWT_SECRET (+ по желанию GROQ_MODEL, GROQ_REPORT_MODEL, AI_DAILY_LIMIT, DEMO_REPORT_TOKEN)
     environment:                # БД и хост/порт задаём здесь (перекрывают env_file)
       HOST: 0.0.0.0
       PORT: "8080"
@@ -44,6 +44,7 @@ services:
       DEVLOG_PORT: ${DEVLOG_PORT}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./downloads:/srv/download:ro   # APK для страницы install.html
       - caddy_data:/data
       - caddy_config:/config
     networks: [devlog-net]
