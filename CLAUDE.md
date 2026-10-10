@@ -335,7 +335,8 @@ SQLDelight), импорт GitLab (миграция V8). При следующе�
 - **Локальный запуск вживую:** поднять Docker Desktop → `docker compose -f backend/docker-compose.yml up -d`
   (Postgres `devlog-pg` на порту 5433) → `PORT=<свободный порт, 8080 может быть занят другим
   проектом> ./gradlew -p backend run` → http://localhost:PORT.
-- **Android:** из `androidApp/`, `.\gradlew.bat :app:assembleDebug`
+- **Android:** из `androidApp/`, `.\gradlew.bat :app:assembleDebug`; UI-тесты Compose —
+  `:app:connectedDebugAndroidTest` на эмуляторе `Pixel_7` (после прогона Gradle удаляет приложение с эмулятора)
   (→ `app/build/outputs/apk/debug/app-debug.apk`). Адрес API — поле сборки `BuildConfig.BASE_URL`
   (`app/build.gradle.kts`): release всегда боевой, debug можно направить на локальный сервер —
   `-Pdevlog.baseUrl=http://10.0.2.2:PORT/` (HTTP к 10.0.2.2/localhost/192.168.0.102 разрешён только в debug).

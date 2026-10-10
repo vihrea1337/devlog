@@ -32,6 +32,8 @@ android {
         versionCode = 4
         versionName = "1.3.0"
         buildConfigField("String", "BASE_URL", "\"$debugBaseUrl\"")
+        // Запуск UI-тестов (androidTest) на эмуляторе или телефоне.
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildTypes {
@@ -64,6 +66,7 @@ android {
     // Разрешаем держать исходники в папке src/main/kotlin (а не только java).
     sourceSets["main"].java.srcDirs("src/main/kotlin")
     sourceSets["test"].java.srcDirs("src/test/kotlin")
+    sourceSets["androidTest"].java.srcDirs("src/androidTest/kotlin")
 
     testOptions {
         // В юнит-тестах (на обычной JVM, без телефона) вызовы android.* возвращают
@@ -141,4 +144,16 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
     testImplementation("app.cash.turbine:turbine:1.2.1")
+
+    // UI-тесты Compose (androidTest): идут на эмуляторе/телефоне —
+    // ./gradlew :app:connectedDebugAndroidTest. Версии compose-тестов — из того же BOM.
+    androidTestImplementation(composeBom)
+    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+    androidTestImplementation("androidx.test.ext:junit:1.3.0")
+    androidTestImplementation("androidx.test:runner:1.7.0")
+    // Compose-тесты внутри используют Espresso; старый (3.5/3.6) падает на Android 16+
+    // (NoSuchMethodException: InputManager.getInstance) — поднимаем явно.
+    androidTestImplementation("androidx.test.espresso:espresso-core:3.7.0")
+    // Пустая Activity, в которой тест рисует отдельный composable.
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
 }

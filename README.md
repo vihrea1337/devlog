@@ -56,7 +56,7 @@ Kotlin + Jetpack Compose (Material 3), minSdk 26, targetSdk 36, release-сбор
 | Фон | WorkManager: синхронизация с условием «есть сеть» (переживает закрытие приложения и перезагрузку, повтор с backoff), вечернее напоминание |
 | Общий код | Модуль `shared/` (DTO API, SQLDelight-схема, клиент синхронизации на Ktor Client) — один контракт для сервера и клиента: поле поменялось — оба не скомпилируются, пока не поправишь |
 | Остальное | Демо-вход «только просмотр», голосовой ввод (`RecognizerIntent`), сводка недели и диаграмма времени на Canvas, тёмная тема, DataStore для настроек |
-| Тесты | Юнит-тесты ViewModel и расчётов (JUnit, kotlinx-coroutines-test, Turbine) + тесты синхронизации в `shared/` |
+| Тесты | Юнит-тесты ViewModel и расчётов (JUnit, kotlinx-coroutines-test, Turbine), UI-тесты Compose (`createComposeRule`) + тесты синхронизации в `shared/` |
 
 ## Возможности
 
@@ -108,6 +108,7 @@ cd androidApp && ./gradlew :app:assembleDebug -Pdevlog.baseUrl=http://10.0.2.2:8
 ```bash
 cd backend && ./gradlew test :shared:test     # 181 тест бэкенда (на встроенной H2) + 27 тестов общего модуля
 cd androidApp && ./gradlew :app:testDebugUnitTest   # 17 юнит-тестов Android
+cd androidApp && ./gradlew :app:connectedDebugAndroidTest   # UI-тесты Compose — на эмуляторе или телефоне
 ```
 
 ## Деплой

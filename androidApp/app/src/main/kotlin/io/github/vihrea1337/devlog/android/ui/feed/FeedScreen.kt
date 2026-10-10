@@ -300,7 +300,7 @@ fun ProjectDot(project: ProjectDto, size: Int = 8) {
  * доступен: разбор — лишь пересказ.
  */
 @Composable
-private fun EntryCard(
+internal fun EntryCard( // internal, а не private — её проверяет UI-тест EntryCardTest
     entry: EntryDto,
     readOnly: Boolean,
     project: ProjectDto?,
