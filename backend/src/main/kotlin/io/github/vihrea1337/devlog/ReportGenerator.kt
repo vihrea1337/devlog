@@ -10,8 +10,8 @@ import java.util.UUID
  *
  * 1. **Аналитическая часть** (Кратко / Главные результаты / Ключевые решения / Сложные
  *    проблемы / Что дальше) — её пишет ИИ по ТЕМАМ, а не по дням. На вход он получает
- *    [digest] — полную структуру записей (суть, шаги, решения, проблемы, итог), а не урезанный
- *    список шагов. Если ИИ недоступен (нет ключа, лимит, ошибка) — эту часть собирает код
+ *    [digest] — сами заметки автора (первоисточник) с краткой сутью от ИИ; на длинных
+ *    периодах, где заметки не влезают, — полную структуру записей. Если ИИ недоступен (нет ключа, лимит, ошибка) — эту часть собирает код
  *    из той же структуры ([fallbackBody]): без связного текста, но с теми же разделами.
  *
  * 2. **Факты** — шапка, таблица «Цифры периода» и «Хронология» по дням. Их ВСЕГДА строит код:
@@ -68,19 +68,43 @@ object ReportGenerator {
     }
 
     /**
-     * Данные для ИИ: по записи на абзац — дата, проект, время и вся структура.
+     * Данные для ИИ: по записи на абзац — дата, проект, время и содержание.
      * Компактный текст, а не JSON: так меньше токенов, а модели читают его не хуже.
-     * Если всё не влезает в [DIGEST_MAX_CHARS] — урезаем шаги (они самые многословные),
-     * решения и проблемы оставляем: из них и получается ценность отчёта.
+     *
+     * Главное — САМА ЗАМЕТКА автора, а не только её разбор ИИ. Раньше отчёт строился только
+     * по разбору, и каждая ошибка разбора («вывод: настроить бэкап» → «бэкап настроен»)
+     * переезжала в отчёт и обрастала подробностями. Теперь модель видит первоисточник,
+     * а от разбора — лишь «суть» как подсказку.
+     *
+     * Если всё не влезает в [DIGEST_MAX_CHARS] (длинный период), урезаем заметки, а если и это
+     * не помогает — переходим на разбор ИИ без заметок, как раньше: шаги урезаем (они самые
+     * многословные), решения и проблемы оставляем — из них и получается ценность отчёта.
      */
     fun digest(entries: List<EntryDto>, projects: Map<String, ProjectDto> = emptyMap()): String {
-        fun render(maxSteps: Int): String = buildString {
+        fun StringBuilder.header(e: EntryDto) {
+            append("\n### ").append(e.occurredOn)
+            e.projectId?.let { projects[it]?.name }?.let { append(" · проект «").append(it).append("»") }
+            e.timeSpentMin?.let { append(" · ").append(humanDuration(it)) }
+            append("\n")
+        }
+
+        /** Вариант «заметка + суть»: заметка обрезается до [rawLimit] символов. */
+        fun withNotes(rawLimit: Int): String = buildString {
+            append("Записи разработчика за период (").append(entries.size).append(" шт., от ранних к поздним).\n")
+            append("«Заметка» — текст автора, первоисточник; «Суть» — краткий разбор ИИ, подсказка.\n")
+            for (e in entries) {
+                header(e)
+                val raw = e.rawText.trim()
+                append("Заметка: ").append(if (raw.length > rawLimit) raw.take(rawLimit) + "…" else raw).append("\n")
+                e.structured?.summary?.takeIf { it.isNotBlank() }?.let { append("Суть: ").append(it).append("\n") }
+            }
+        }
+
+        /** Вариант «только разбор ИИ» — для длинных периодов, где заметки не влезают. */
+        fun structuredOnly(maxSteps: Int): String = buildString {
             append("Записи разработчика за период (").append(entries.size).append(" шт., от ранних к поздним):\n")
             for (e in entries) {
-                append("\n### ").append(e.occurredOn)
-                e.projectId?.let { projects[it]?.name }?.let { append(" · проект «").append(it).append("»") }
-                e.timeSpentMin?.let { append(" · ").append(humanDuration(it)) }
-                append("\n")
+                header(e)
                 val s = e.structured
                 if (s == null || s.summary.isBlank()) {
                     // ИИ эту запись ещё не разобрал (или не смог) — даём сырой текст.
@@ -94,11 +118,12 @@ object ReportGenerator {
                 if (s.outcome.isNotBlank()) append("Итог: ").append(s.outcome).append("\n")
             }
         }
-        for (maxSteps in listOf(Int.MAX_VALUE, 4, 2, 0)) {
-            val text = render(maxSteps)
-            if (text.length <= DIGEST_MAX_CHARS) return text
-        }
-        return render(0).take(DIGEST_MAX_CHARS)
+
+        // Sequence ленивая: следующий вариант строится, только если предыдущий не влез.
+        val variants = sequenceOf(3000, 1200, 600).map { limit -> withNotes(limit) } +
+            sequenceOf(Int.MAX_VALUE, 4, 2, 0).map { maxSteps -> structuredOnly(maxSteps) }
+        return variants.firstOrNull { it.length <= DIGEST_MAX_CHARS }
+            ?: structuredOnly(0).take(DIGEST_MAX_CHARS)
     }
 
     /**

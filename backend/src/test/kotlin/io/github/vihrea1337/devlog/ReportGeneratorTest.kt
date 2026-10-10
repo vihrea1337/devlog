@@ -101,27 +101,39 @@ class ReportGeneratorTest {
     }
 
     @Test
-    fun `digest содержит решения и проблемы, проект и время`() {
+    fun `digest даёт ИИ саму заметку автора, проект и время`() {
+        // Заметка — первоисточник: ошибки разбора ИИ не должны переезжать в отчёт.
         val project = ProjectDto(id = "p1", name = "DevLog")
-        val d = ReportGenerator.digest(listOf(entry("2026-08-12", "flyway", flyway, 480, "p1")), mapOf("p1" to project))
+        val d = ReportGenerator.digest(listOf(entry("2026-08-12", "flyway вместо SchemaUtils", flyway, 480, "p1")), mapOf("p1" to project))
 
         assertTrue(d.contains("### 2026-08-12 · проект «DevLog» · 8 ч"))
-        assertTrue(d.contains("- решение: Flyway вместо SchemaUtils"))
-        assertTrue(d.contains("- проблема: fat-jar терял"))
-        assertTrue(d.contains("Итог: Миграции применяются на проде"))
+        assertTrue(d.contains("Заметка: flyway вместо SchemaUtils"))
+        assertTrue(d.contains("Суть: "))
     }
 
     @Test
-    fun `digest урезает шаги, чтобы влезть в лимит, но решения оставляет`() {
+    fun `digest урезает длинные заметки, чтобы влезть в лимит`() {
+        val d = ReportGenerator.digest(List(10) { entry("2026-08-%02d".format(it + 1), "слово ".repeat(400), flyway) })
+
+        assertTrue(d.length <= 10_000, "digest должен влезать в лимит, а он ${d.length}")
+        assertEquals(10, Regex("Заметка: ").findAll(d).count(), "заметки урезаны, но не выброшены")
+    }
+
+    @Test
+    fun `на длинном периоде digest переходит на разбор ИИ, решения и проблемы сохраняет`() {
         val many = StructuredDto(
             summary = "день",
             steps = List(40) { "очень длинный шаг номер $it ".repeat(6) },
             decisions = listOf("ключевое решение"),
+            problems = listOf("fat-jar терял миграции"),
         )
-        val d = ReportGenerator.digest(List(12) { entry("2026-08-%02d".format(it + 1), "x$it", many) })
+        // 40 записей по ~600 символов не влезают даже урезанными — нужен разбор без заметок.
+        val d = ReportGenerator.digest(List(40) { entry("2026-08-%02d".format(it % 28 + 1), "заметка ".repeat(80), many) })
 
         assertTrue(d.length <= 10_000, "digest должен влезать в лимит, а он ${d.length}")
-        assertEquals(12, Regex("- решение: ключевое решение").findAll(d).count())
+        assertFalse(d.contains("Заметка: "))
+        assertTrue(d.contains("- решение: ключевое решение"))
+        assertTrue(d.contains("- проблема: fat-jar терял миграции"))
     }
 
     @Test
