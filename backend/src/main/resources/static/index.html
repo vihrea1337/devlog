@@ -4,127 +4,298 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>DevLog — дневник разработчика</title>
+<meta name="description" content="Пишите пару строк о работе каждый день — ИИ разберёт их на шаги, решения и проблемы и соберёт отчёт для работодателя.">
+<meta name="theme-color" content="#3b6ef5">
 <style>
-  /* Светлая тема — значения по умолчанию. Все цвета живут в переменных,
-     поэтому тёмная тема ниже переопределяет только их, а не всю разметку. */
+  /*
+   * Веб-версия DevLog. Визуальный язык — общий с Android-приложением и страницей установки:
+   * фирменный синий, карточки, те же цвета статусов ИИ («в очереди», «готово», «ошибка»).
+   *
+   * Все цвета — переменные: светлая тема по умолчанию, тёмная переопределяет только их.
+   * Тёмная включается кнопкой (data-theme="dark") или из настроек системы, если пользователь
+   * явно не выбрал светлую.
+   */
   :root {
-    --bg: #f5f6f8; --card: #ffffff; --ink: #1c2330; --muted: #6b7382;
-    --line: #e3e6ec; --accent: #3b6ef5; --accent-ink: #fff;
-    --ok: #1f9d55; --warn: #b7791f; --err: #d64545;
-    --input-bg: #ffffff; --chip-bg: #eef0f4; --accent-bg: #eef2fe;
-    --ok-bg: #e7f6ec; --warn-bg: #fdf3e2; --err-bg: #fbe9e9;
-    --preview-bg: #fbfcfe;
-    --hm0: #e9ecf1; --hm1: #bcd0fb; --hm2: #8fb0f8; --hm3: #5f8bf4; --hm4: #3b6ef5;
-  }
-
-  /* Тёмная тема: либо выбрана кнопкой, либо взята из настроек системы
-     (если пользователь явно не выбрал светлую). */
-  :root[data-theme="dark"],
-  :root:not([data-theme="light"]) {
-    color-scheme: light;
+    --bg: #f4f6fb; --card: #ffffff; --card-2: #f0f2f8; --ink: #171c28; --ink-2: #3a4252; --muted: #6b7386;
+    --line: #e2e6ef; --accent: #3b6ef5; --accent-hover: #2f5ad6; --accent-ink: #fff; --accent-bg: #ebf0fe;
+    --ok: #1f8a4c; --ok-bg: #e4f5ea; --warn: #a8660f; --warn-bg: #fcf1dd; --err: #c43d3d; --err-bg: #fbe7e7;
+    --input-bg: #fff; --shadow: 0 1px 2px rgba(20, 30, 60, .05), 0 6px 20px rgba(20, 30, 60, .06);
+    --hm0: #e7eaf2; --hm1: #c3d3fc; --hm2: #93b0f8; --hm3: #5f8bf4; --hm4: #3b6ef5;
+    --radius: 14px;
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
       color-scheme: dark;
-      --bg: #14171d; --card: #1b1f27; --ink: #e7eaf0; --muted: #9aa3b2;
-      --line: #2b313c; --accent: #6f97ff; --accent-ink: #0f1218;
-      --ok: #4ec27f; --warn: #e0a33c; --err: #f07070;
-      --input-bg: #141821; --chip-bg: #252b36; --accent-bg: #232c46;
-      --ok-bg: #1b3327; --warn-bg: #33290f; --err-bg: #3a1f1f;
-      --preview-bg: #171b22;
-      --hm0: #262c36; --hm1: #24406e; --hm2: #33589b; --hm3: #4b74c9; --hm4: #6f97ff;
+      --bg: #0f1218; --card: #171b23; --card-2: #1e232d; --ink: #e8ebf2; --ink-2: #c4cad6; --muted: #98a1b3;
+      --line: #282e3a; --accent: #7c9dff; --accent-hover: #9bb5ff; --accent-ink: #0d1220; --accent-bg: #1e2945;
+      --ok: #6fd69a; --ok-bg: #16301f; --warn: #f2b451; --warn-bg: #352a12; --err: #ff8a8a; --err-bg: #3a1c1c;
+      --input-bg: #12161d; --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 8px 24px rgba(0, 0, 0, .25);
+      --hm0: #222834; --hm1: #24406e; --hm2: #33589b; --hm3: #4b74c9; --hm4: #7c9dff;
     }
   }
   :root[data-theme="dark"] {
     color-scheme: dark;
-    --bg: #14171d; --card: #1b1f27; --ink: #e7eaf0; --muted: #9aa3b2;
-    --line: #2b313c; --accent: #6f97ff; --accent-ink: #0f1218;
-    --ok: #4ec27f; --warn: #e0a33c; --err: #f07070;
-    --input-bg: #141821; --chip-bg: #252b36; --accent-bg: #232c46;
-    --ok-bg: #1b3327; --warn-bg: #33290f; --err-bg: #3a1f1f;
-    --preview-bg: #171b22;
-    --hm0: #262c36; --hm1: #24406e; --hm2: #33589b; --hm3: #4b74c9; --hm4: #6f97ff;
+    --bg: #0f1218; --card: #171b23; --card-2: #1e232d; --ink: #e8ebf2; --ink-2: #c4cad6; --muted: #98a1b3;
+    --line: #282e3a; --accent: #7c9dff; --accent-hover: #9bb5ff; --accent-ink: #0d1220; --accent-bg: #1e2945;
+    --ok: #6fd69a; --ok-bg: #16301f; --warn: #f2b451; --warn-bg: #352a12; --err: #ff8a8a; --err-bg: #3a1c1c;
+    --input-bg: #12161d; --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 8px 24px rgba(0, 0, 0, .25);
+    --hm0: #222834; --hm1: #24406e; --hm2: #33589b; --hm3: #4b74c9; --hm4: #7c9dff;
   }
+
   * { box-sizing: border-box; }
-  body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-    background: var(--bg); color: var(--ink); line-height: 1.5; }
-  .wrap { max-width: 760px; margin: 0 auto; padding: 20px 16px 60px; }
-  header.top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
-  header.top h1 { font-size: 20px; margin: 0; }
+  html, body { margin: 0; }
+  body { font: 15px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--ink); }
+  input, textarea, button, select { font: inherit; color: inherit; }
+  a { color: var(--accent); }
+  .hidden { display: none !important; }
   .muted { color: var(--muted); }
-  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-bottom: 14px; }
-  label { display: block; font-size: 13px; color: var(--muted); margin: 8px 0 4px; }
-  input, textarea, button, select { font: inherit; }
-  input, textarea, select { width: 100%; padding: 9px 11px; border: 1px solid var(--line); border-radius: 8px;
-    background: var(--input-bg); color: var(--ink); }
-  textarea { resize: vertical; min-height: 76px; }
-  .proj { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600;
-    color: var(--muted); background: var(--chip-bg); padding: 2px 8px; border-radius: 6px; }
-  .proj .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
-  .proj-row { display: flex; align-items: center; justify-content: space-between; gap: 10px;
-    padding: 8px 0; border-bottom: 1px solid var(--line); }
-  .proj-row:last-child { border-bottom: none; }
-  .ai-off { font-size: 11px; color: var(--warn); background: var(--warn-bg); padding: 1px 6px; border-radius: 5px; }
-  button { cursor: pointer; border: none; border-radius: 8px; padding: 9px 14px; font-weight: 600; }
-  button.primary { background: var(--accent); color: var(--accent-ink); }
-  button.ghost { background: transparent; color: var(--muted); border: 1px solid var(--line); padding: 6px 10px; font-weight: 500; }
-  button:disabled { opacity: .55; cursor: default; }
-  .row { display: flex; gap: 10px; }
-  .row > * { flex: 1; }
-  .day { font-size: 13px; font-weight: 700; color: var(--muted); margin: 18px 2px 8px; text-transform: uppercase; letter-spacing: .03em; }
-  .entry .raw { white-space: pre-wrap; }
-  .badge { display: inline-block; font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 20px; }
-  .b-queued, .b-processing { background: var(--warn-bg); color: var(--warn); }
-  .b-structured { background: var(--ok-bg); color: var(--ok); }
-  .b-failed { background: var(--err-bg); color: var(--err); }
-  .b-draft { background: var(--chip-bg); color: var(--muted); }
-  .struct { margin-top: 10px; border-top: 1px dashed var(--line); padding-top: 10px; }
-  .struct h4 { margin: 8px 0 2px; font-size: 13px; }
-  .struct ul { margin: 2px 0 0; padding-left: 18px; }
-  .tags { margin-top: 8px; }
-  .tag-btn { cursor: pointer; }
-  .tag { display: inline-block; background: var(--accent-bg); color: var(--accent); font-size: 12px; padding: 2px 8px; border-radius: 6px; margin: 2px 4px 0 0; }
-  .entry-actions { margin-top: 10px; display: flex; gap: 8px; }
-  .err { color: var(--err); font-size: 13px; min-height: 18px; }
-  .ai-err { margin-top: 8px; font-size: 12px; color: var(--err); background: var(--err-bg); padding: 6px 9px; border-radius: 6px; }
-  .hint-row { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; margin-top: 4px; }
-  /* Календарь активности: 7 строк (дни недели), недели идут колонками — как контрибуции на GitHub. */
-  .hm-scroll { overflow-x: auto; padding-bottom: 4px; }
-  .heatmap { display: grid; grid-template-rows: repeat(7, 10px); grid-auto-flow: column;
-    grid-auto-columns: 10px; gap: 3px; width: max-content; }
-  .hm-months { display: grid; grid-auto-flow: column; grid-auto-columns: 10px; gap: 3px;
-    width: max-content; font-size: 10px; color: var(--muted); height: 14px; }
-  .hm-cell { width: 10px; height: 10px; border-radius: 2px; background: var(--hm0); cursor: pointer; }
-  .hm-cell.l1 { background: var(--hm1); } .hm-cell.l2 { background: var(--hm2); }
-  .hm-cell.l3 { background: var(--hm3); } .hm-cell.l4 { background: var(--hm4); }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  svg.i { width: 18px; height: 18px; flex: none; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+  /* --- Кнопки и поля --- */
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: 1px solid transparent; border-radius: 10px;
+    padding: 9px 16px; font-weight: 600; cursor: pointer; background: var(--card-2); color: var(--ink); text-decoration: none; white-space: nowrap; }
+  .btn:hover { border-color: var(--line); }
+  .btn.primary { background: var(--accent); color: var(--accent-ink); }
+  .btn.primary:hover { background: var(--accent-hover); }
+  .btn.ghost { background: transparent; color: var(--muted); border-color: var(--line); font-weight: 500; }
+  .btn.ghost:hover { color: var(--ink); background: var(--card-2); }
+  .btn.sm { padding: 5px 10px; font-size: 13px; border-radius: 8px; }
+  .btn.icon { padding: 8px; }
+  .btn:disabled { opacity: .55; cursor: default; }
+  .field { display: grid; gap: 5px; min-width: 0; }
+  .field > span { font-size: 13px; color: var(--muted); }
+  input, textarea, select { width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--input-bg); }
+  input:focus, textarea:focus, select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-bg); }
+  textarea { resize: vertical; min-height: 96px; line-height: 1.5; }
+  .err { color: var(--err); font-size: 13px; min-height: 0; }
+  .err:empty { display: none; }
+
+  /* --- Экран входа: слева витрина, справа форма --- */
+  #auth { min-height: 100vh; display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); }
+  .auth-hero { position: relative; overflow: hidden; color: #fff; padding: 48px clamp(24px, 5vw, 64px); display: flex; flex-direction: column; justify-content: center; gap: 28px;
+    background: radial-gradient(120% 90% at 100% 0%, rgba(255,255,255,.16) 0%, transparent 55%), linear-gradient(135deg, #1e3a8a 0%, #3b6ef5 58%, #6f97ff 100%); }
+  .auth-hero::before { content: ""; position: absolute; right: -60px; bottom: -40px; width: 340px; height: 220px; transform: rotate(-8deg);
+    background-image: radial-gradient(rgba(255,255,255,.17) 3px, transparent 3.5px); background-size: 16px 16px; }
+  .auth-hero > * { position: relative; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 18px; }
+  .logo { width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center; font-weight: 800; font-size: 14px; letter-spacing: -.02em; background: var(--accent); color: #fff; }
+  .auth-hero .logo { background: rgba(255,255,255,.95); color: #1e3a8a; }
+  .auth-hero h1 { font-size: clamp(28px, 3.4vw, 40px); line-height: 1.15; margin: 0; letter-spacing: -.02em; text-wrap: balance; max-width: 560px; }
+  .auth-hero .sub { margin: 0; color: rgba(255,255,255,.9); max-width: 500px; font-size: 16px; }
+  .demo-flow { display: grid; gap: 10px; max-width: 420px; }
+  .demo-raw { background: rgba(10, 18, 40, .72); color: #dbe4ff; padding: 12px 14px; border-radius: 12px; font: 13px/1.5 ui-monospace, "Cascadia Mono", Consolas, monospace; box-shadow: 0 10px 26px rgba(0,0,0,.22); }
+  .demo-raw .caret { display: inline-block; width: 2px; height: 1.1em; background: #8fb0ff; vertical-align: text-bottom; margin-left: 2px; animation: caret .8s step-end infinite; }
+  .demo-card { background: #fff; color: #171c28; padding: 13px 15px; border-radius: 12px; font-size: 13.5px; line-height: 1.45; box-shadow: 0 10px 26px rgba(0,0,0,.22); animation: pop 9s ease-out infinite; }
+  .demo-card b { display: block; font-size: 14.5px; margin-bottom: 6px; }
+  .demo-card .r { display: flex; gap: 8px; margin: 3px 0; } .demo-card .k { color: #3b6ef5; font-weight: 700; min-width: 74px; }
+  .demo-card .tg { display: flex; gap: 5px; margin-top: 8px; flex-wrap: wrap; } .demo-card .tg span { font-size: 11.5px; font-weight: 600; color: #3b6ef5; background: #ebf0fe; border-radius: 999px; padding: 1px 8px; }
+  @keyframes caret { 50% { opacity: 0; } }
+  @keyframes pop { 0%, 30% { opacity: 0; transform: translateY(8px) scale(.97); } 38%, 92% { opacity: 1; transform: none; } 100% { opacity: 0; transform: translateY(-4px); } }
+  .auth-side { display: grid; place-items: center; padding: 32px 20px; position: relative; }
+  .auth-side .theme-btn { position: absolute; top: 18px; right: 18px; }
+  .auth-card { width: 100%; max-width: 400px; display: grid; gap: 14px; }
+  .auth-card h2 { margin: 0; font-size: 24px; letter-spacing: -.01em; }
+  .demo-box { border: 1px dashed var(--accent); background: var(--accent-bg); border-radius: 12px; padding: 14px; display: grid; gap: 8px; }
+  .demo-box p { margin: 0; font-size: 14px; color: var(--ink-2); }
+  .divider { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 13px; }
+  .divider::before, .divider::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+  .switch { text-align: center; font-size: 14px; color: var(--muted); }
+  .switch a { cursor: pointer; text-decoration: none; font-weight: 600; }
+  .auth-links { font-size: 13px; color: var(--muted); text-align: center; }
+  .auth-links a { color: var(--muted); }
+  @media (max-width: 860px) {
+    #auth { grid-template-columns: 1fr; }
+    .auth-hero { padding: 28px 20px; gap: 18px; }
+    .auth-hero .demo-flow { display: none; }
+    .auth-side { padding: 28px 16px 40px; place-items: start center; }
+    .auth-side .theme-btn { position: static; justify-self: end; }
+  }
+
+  /* --- Приложение --- */
+  .topbar { position: sticky; top: 0; z-index: 20; background: color-mix(in srgb, var(--bg) 85%, transparent); backdrop-filter: blur(10px); border-bottom: 1px solid var(--line); }
+  .topbar-in { max-width: 1180px; margin: 0 auto; padding: 10px 20px; display: flex; align-items: center; gap: 12px; }
+  .topbar .brand { font-size: 17px; }
+  .topbar .spacer { flex: 1; }
+  .who { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--ink-2); min-width: 0; }
+  .avatar { width: 30px; height: 30px; border-radius: 50%; background: var(--accent-bg); color: var(--accent); display: grid; place-items: center; font-weight: 700; font-size: 13px; flex: none; }
+  .who .name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; }
+  .ro-banner { background: var(--warn-bg); color: var(--warn); font-size: 14px; }
+  .ro-banner > div { max-width: 1180px; margin: 0 auto; padding: 8px 20px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .ro-banner b { color: var(--ink); }
+
+  .layout { max-width: 1180px; margin: 0 auto; padding: 20px; display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 22px; align-items: start; }
+  /* min-width: 0 — иначе календарь (ширина «по содержимому», весь год) раздувает колонку за её 340px. */
+  .aside { display: grid; gap: 16px; position: sticky; top: 76px; min-width: 0; }
+  .aside > .card { min-width: 0; }
+  .main { display: grid; gap: 16px; min-width: 0; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; box-shadow: var(--shadow); }
+  .card-title { font-size: 13px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin: 0 0 12px; }
+
+  /* Сводка за 7 дней */
+  .week-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .stat { background: var(--card-2); border-radius: 10px; padding: 10px 12px; }
+  .stat b { display: block; font-size: 22px; line-height: 1.2; font-variant-numeric: tabular-nums; }
+  .stat span { font-size: 12px; color: var(--muted); }
+  .bars { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; align-items: end; height: 86px; margin-top: 14px; }
+  .bar { display: grid; gap: 4px; justify-items: center; align-self: end; }
+  .bar i { display: block; width: 100%; max-width: 26px; border-radius: 6px 6px 3px 3px; background: var(--accent); min-height: 3px; opacity: .9; transition: height .4s ease; }
+  .bar i.zero { background: var(--hm0); opacity: 1; }
+  .bar span { font-size: 11px; color: var(--muted); }
+
+  /* Календарь активности: 7 строк (дни недели), недели — колонками, как контрибуции на GitHub. */
+  .streak { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 15px; margin-bottom: 4px; }
+  .stats-line { font-size: 13px; color: var(--muted); margin-bottom: 12px; }
+  .hm-scroll { overflow-x: auto; padding-bottom: 6px; scrollbar-width: thin; }
+  .heatmap { display: grid; grid-template-rows: repeat(7, 11px); grid-auto-flow: column; grid-auto-columns: 11px; gap: 3px; width: max-content; }
+  .hm-months { display: grid; grid-auto-flow: column; grid-auto-columns: 11px; gap: 3px; width: max-content; font-size: 10px; color: var(--muted); height: 15px; }
+  .hm-cell { width: 11px; height: 11px; border-radius: 3px; background: var(--hm0); cursor: pointer; }
+  .hm-cell.l1 { background: var(--hm1); } .hm-cell.l2 { background: var(--hm2); } .hm-cell.l3 { background: var(--hm3); } .hm-cell.l4 { background: var(--hm4); }
   .hm-cell.hm-out { visibility: hidden; }
   .hm-cell.hm-sel { outline: 2px solid var(--ink); outline-offset: 1px; }
-  .streak { font-size: 15px; font-weight: 700; }
-  .stats-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px;
-    flex-wrap: wrap; margin-bottom: 10px; }
-  .day-chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600;
-    background: var(--accent-bg); color: var(--accent); padding: 3px 9px; border-radius: 6px; cursor: pointer; }
+
+  /* Быстрые действия */
+  .actions { display: grid; gap: 6px; }
+  .action { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 10px; background: transparent; border: 1px solid transparent; cursor: pointer; text-align: left; width: 100%; color: var(--ink); }
+  .action:hover { background: var(--card-2); border-color: var(--line); }
+  .action .ico { width: 34px; height: 34px; border-radius: 9px; background: var(--accent-bg); color: var(--accent); display: grid; place-items: center; flex: none; }
+  .action b { display: block; font-size: 14px; } .action small { color: var(--muted); font-size: 12.5px; }
+
+  /* Новая запись: свёрнута в строку, по клику разворачивается */
+  .composer-collapsed { display: flex; align-items: center; gap: 12px; cursor: text; }
+  .composer-collapsed .fake { flex: 1; color: var(--muted); padding: 10px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--input-bg); }
+  .composer-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin-bottom: 4px; }
+  .composer-head h2 { font-size: 18px; margin: 0; }
+  .composer-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 12px 0; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { border: 1px solid var(--line); background: var(--card); border-radius: 999px; padding: 4px 12px; font-size: 13px; cursor: pointer; color: var(--ink-2); }
+  .chip.on { background: var(--accent-bg); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+  .composer-foot { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+  .composer-foot .hint { font-size: 12.5px; color: var(--muted); }
+  .composer-foot .grow { flex: 1; }
   .counter-over { color: var(--err); font-weight: 600; }
-  /* Предпросмотр отчёта: показываем готовый документ, а не исходник Markdown. */
-  .report-preview { margin-top: 10px; padding: 14px 16px; background: var(--preview-bg); border: 1px solid var(--line);
-    border-radius: 8px; max-height: 420px; overflow-y: auto; }
-  .report-preview h1 { font-size: 19px; margin: 0 0 8px; }
-  .report-preview h2 { font-size: 15px; margin: 16px 0 4px; }
-  .report-preview h3 { font-size: 14px; margin: 12px 0 2px; }
-  .report-preview ul, .report-preview ol { margin: 4px 0; padding-left: 20px; }
-  .report-preview code { font-size: 12px; background: var(--chip-bg); padding: 1px 5px; border-radius: 4px; }
-  .report-preview p { margin: 6px 0; }
-  .report-preview table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 13px;
-    display: block; overflow-x: auto; }
-  .report-preview th, .report-preview td { border: 1px solid var(--line); padding: 5px 9px; text-align: left; }
-  .report-preview th { background: var(--chip-bg); font-weight: 600; }
-  .rep-row { display: flex; justify-content: space-between; align-items: center; gap: 10px;
-    padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
-  .rep-row:last-child { border-bottom: none; }
+
+  /* Поиск и фильтры ленты */
+  .toolbar { display: flex; gap: 10px; align-items: center; }
+  .search { position: relative; flex: 1; min-width: 0; }
+  .search svg { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--muted); }
+  .search input { padding-left: 38px; }
+  .toolbar select { width: auto; max-width: 200px; }
+  .filter-row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .filter-row:not(:has(.day-chip:not(.hidden))) { display: none; }
+  .day-chip { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; background: var(--accent-bg); color: var(--accent); padding: 4px 10px; border-radius: 999px; cursor: pointer; }
+  .mobile-actions { display: none; }
+
+  /* Лента */
+  .day { display: flex; justify-content: space-between; align-items: baseline; margin: 10px 4px 2px; }
+  .day b { font-size: 13px; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-2); }
+  .day span { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .entry { padding: 16px 18px; display: grid; gap: 8px; }
+  .entry-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 13px; color: var(--muted); }
+  .entry-top .grow { flex: 1; }
+  .proj { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; color: var(--ink-2); }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); flex: none; }
+  .lock { font-size: 11.5px; color: var(--warn); background: var(--warn-bg); padding: 1px 7px; border-radius: 999px; font-weight: 600; }
+  .time { display: inline-flex; align-items: center; gap: 4px; font-variant-numeric: tabular-nums; }
+  .badge { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; padding: 3px 10px; border-radius: 999px; white-space: nowrap; }
+  .b-queued, .b-processing { background: var(--warn-bg); color: var(--warn); }
+  .b-processing::before, .b-queued::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; animation: pulse 1.2s ease-in-out infinite; }
+  .b-structured { background: var(--ok-bg); color: var(--ok); }
+  .b-failed { background: var(--err-bg); color: var(--err); }
+  .b-draft { background: var(--card-2); color: var(--muted); }
+  @keyframes pulse { 50% { opacity: .3; } }
+  .summary { font-size: 17px; font-weight: 650; line-height: 1.35; margin: 0; text-wrap: pretty; }
+  .raw { white-space: pre-wrap; margin: 0; color: var(--ink-2); overflow-wrap: anywhere; }
+  .entry.has-ai .raw { color: var(--muted); font-size: 14px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .entry.has-ai.open .raw { display: block; }
+  .entry:not(.has-ai) .raw.long { display: -webkit-box; -webkit-line-clamp: 8; -webkit-box-orient: vertical; overflow: hidden; }
+  .entry.open .raw.long { display: block; }
+  .struct { display: none; gap: 10px; border-top: 1px dashed var(--line); padding-top: 12px; margin-top: 2px; }
+  .entry.open .struct { display: grid; }
+  .struct h4 { margin: 0 0 4px; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  .struct ul { margin: 0; padding-left: 18px; display: grid; gap: 3px; }
+  .struct p { margin: 0; }
+  .entry-foot { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .tags { display: flex; gap: 6px; flex-wrap: wrap; flex: 1; min-width: 0; }
+  .tag { font-size: 12.5px; color: var(--accent); cursor: pointer; font-weight: 600; }
+  .tag:hover { text-decoration: underline; }
+  .entry-actions { display: flex; gap: 4px; }
+  .entry-actions .btn { color: var(--muted); }
+  .link-btn { background: none; border: 0; padding: 4px 6px; color: var(--accent); font-weight: 600; cursor: pointer; font-size: 13px; display: inline-flex; gap: 4px; align-items: center; }
+  .ai-err { font-size: 13px; color: var(--muted); }
+  .ai-err.bad { color: var(--err); background: var(--err-bg); padding: 6px 10px; border-radius: 8px; }
   .edit-box { width: 100%; }
-  .switch { text-align: center; margin-top: 10px; font-size: 14px; }
-  a.link { color: var(--accent); cursor: pointer; text-decoration: none; }
-  .hidden { display: none; }
+  .entry.fresh { animation: fresh 2.4s ease-out; }
+  @keyframes fresh { 0% { box-shadow: 0 0 0 0 var(--ok), var(--shadow); border-color: var(--ok); } 100% { box-shadow: 0 0 0 10px transparent, var(--shadow); } }
+  .more { justify-self: center; }
+  .empty { text-align: center; padding: 40px 20px; color: var(--muted); }
+  .empty b { display: block; color: var(--ink); font-size: 17px; margin-bottom: 4px; }
+  .skel { display: grid; gap: 10px; }
+  .skel i { display: block; height: 12px; border-radius: 6px; background: linear-gradient(90deg, var(--card-2), var(--line), var(--card-2)); background-size: 200% 100%; animation: shimmer 1.4s linear infinite; }
+  @keyframes shimmer { to { background-position: -200% 0; } }
+
+  /* Панели (проекты, импорт, отчёты) — модальные окна поверх страницы */
+  .backdrop { position: fixed; inset: 0; background: rgba(10, 14, 24, .45); z-index: 40; backdrop-filter: blur(2px); }
+  .panel { position: fixed; z-index: 50; top: 50%; left: 50%; transform: translate(-50%, -50%); width: min(720px, calc(100vw - 32px)); max-height: calc(100vh - 48px);
+    overflow-y: auto; margin: 0; padding: 22px; display: grid; gap: 12px; align-content: start; }
+  .panel-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+  .panel-head b { font-size: 18px; }
+  .panel .desc { font-size: 14px; color: var(--muted); margin: 0; }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .inline { display: flex; gap: 8px; align-items: end; flex-wrap: wrap; }
+  .inline > .field { flex: 1 1 220px; }
+  .status { font-size: 13px; color: var(--muted); }
+  .proj-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  .proj-row:last-of-type { border-bottom: 0; }
+  .proj-export-form { padding: 12px; border: 1px solid var(--line); border-radius: 10px; display: grid; gap: 8px; }
+  .rep-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 14px; flex-wrap: wrap; }
+  .rep-row:last-child { border-bottom: 0; }
+  .rep-row .t { min-width: 0; flex: 1 1 240px; }
+  .rep-row .t small { display: block; color: var(--muted); }
+  .pill-ok { font-size: 11.5px; color: var(--ok); background: var(--ok-bg); padding: 1px 8px; border-radius: 999px; font-weight: 600; margin-left: 6px; }
+  .report-preview { padding: 18px 20px; background: var(--card-2); border: 1px solid var(--line); border-radius: 12px; max-height: 460px; overflow-y: auto; }
+  .report-preview h1 { font-size: 20px; margin: 0 0 8px; }
+  .report-preview h2 { font-size: 15px; margin: 18px 0 6px; color: var(--accent); }
+  .report-preview ul, .report-preview ol { margin: 4px 0; padding-left: 20px; }
+  .report-preview code { font-size: 12px; background: var(--card); padding: 1px 5px; border-radius: 4px; }
+  .report-preview p { margin: 6px 0; }
+  .report-preview table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 13px; display: block; overflow-x: auto; }
+  .report-preview th, .report-preview td { border: 1px solid var(--line); padding: 5px 9px; text-align: left; }
+  .gen-progress { display: grid; gap: 10px; padding: 16px; border-radius: 12px; background: var(--card-2); }
+  .gen-progress .step { font-size: 14px; color: var(--ink-2); display: flex; gap: 8px; align-items: center; }
+  .spinner { width: 16px; height: 16px; border: 2px solid var(--accent-bg); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; flex: none; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 10px; z-index: 60; font-size: 14px; box-shadow: var(--shadow); }
+  footer.links { text-align: center; font-size: 13px; color: var(--muted); padding: 10px 20px 28px; }
+  footer.links a { color: var(--muted); }
+
+  /* Планшеты и телефоны: одна колонка, боковая панель — над лентой */
+  @media (max-width: 980px) {
+    .layout { grid-template-columns: minmax(0, 1fr); padding: 14px; }
+    .aside { position: static; order: -1; }
+    .aside .actions-card { display: none; }
+    .mobile-actions { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none; }
+    .mobile-actions::-webkit-scrollbar { display: none; }
+  }
+  @media (max-width: 600px) {
+    .topbar-in { padding: 8px 14px; gap: 8px; }
+    .who .name, .theme-label { display: none; }
+    .layout { padding: 12px; gap: 14px; }
+    .card { padding: 15px; }
+    .composer-grid, .row2 { grid-template-columns: 1fr; }
+    .toolbar { flex-wrap: wrap; }
+    .search { flex-basis: 100%; }
+    .toolbar select { max-width: none; flex: 1; }
+    .week-stats .stat b { font-size: 19px; }
+    .panel { top: auto; bottom: 0; left: 0; transform: none; width: 100% !important; max-height: 92vh; border-radius: 18px 18px 0 0; }
+  }
+  /* Демо-режим «только просмотр»: прячем всё, что меняет данные. */
+  body.ro .ro-hide, body.ro #composer, body.ro .entry-actions { display: none !important; }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+  }
 </style>
 <script>
   // Ставим тему до отрисовки страницы, иначе при загрузке мигнёт светлым фоном.
@@ -135,282 +306,275 @@
 </script>
 </head>
 <body>
-<div class="wrap">
+<!-- Набор значков (рисуются через <use href="#i-...">): один раз в разметке, без внешних файлов. -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></symbol>
+  <symbol id="i-report" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol>
+  <symbol id="i-git" viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="8" r="2.5"/><path d="M6 8.5v7M18 10.5c0 4-6 3-10 6"/></symbol>
+  <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 15V4M7 9l5-5 5 5M5 20h14"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/></symbol>
+  <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></symbol>
+  <symbol id="i-sparkle" viewBox="0 0 24 24"><path d="M12 3l2 5 5 2-5 2-2 5-2-5-5-2 5-2zM19 15l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"/></symbol>
+  <symbol id="i-logout" viewBox="0 0 24 24"><path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 16l-4-4 4-4M6 12h10"/></symbol>
+  <symbol id="i-theme" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="i-flame" viewBox="0 0 24 24"><path d="M12 3c1 4 5 5 5 10a5 5 0 0 1-10 0c0-2 1-3 2-4 0 2 1 3 2 3 0-3-1-6 1-9z"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+</svg>
 
-  <!-- Экран входа/регистрации -->
-  <section id="auth">
-    <header class="top">
-      <h1>DevLog</h1>
-      <button class="ghost theme-btn" title="Тема оформления"></button>
-    </header>
-    <div class="card">
-      <div id="authTitle" style="font-weight:700; margin-bottom:6px;">Вход</div>
-      <div id="nameField" class="hidden">
-        <label>Имя</label>
-        <input id="name" placeholder="Как вас звать">
-      </div>
-      <label>Email</label>
-      <input id="email" type="email" placeholder="you@example.com" autocomplete="username">
-      <label>Пароль</label>
-      <input id="password" type="password" placeholder="минимум 6 символов" autocomplete="current-password">
-      <div class="err" id="authErr"></div>
-      <button class="primary" id="authBtn" style="width:100%; margin-top:6px;">Войти</button>
-      <div class="switch">
-        <span id="switchText">Нет аккаунта?</span>
-        <a class="link" id="switchLink">Зарегистрироваться</a>
+<!-- ===================== Экран входа / регистрации ===================== -->
+<section id="auth">
+  <div class="auth-hero">
+    <div class="brand"><span class="logo" aria-hidden="true">DL</span> DevLog</div>
+    <h1>Коммиты говорят, что&nbsp;изменилось. DevLog&nbsp;— зачем и&nbsp;почему.</h1>
+    <p class="sub">Бросьте в конце дня пару строк как есть — ИИ разберёт их на шаги, решения и проблемы, а в конце месяца соберёт отчёт для работодателя по ссылке.</p>
+    <div class="demo-flow" role="img" aria-label="Пример: сырая заметка превращается в разобранную запись">
+      <div class="demo-raw">перевёл миграции на flyway. на деплое фат-жар терял плагины, миграции молча пропускались — перешёл на distTar<span class="caret"></span></div>
+      <div class="demo-card">
+        <b>Перевёл схему БД на миграции Flyway</b>
+        <div class="r"><span class="k">Решение</span><span>Flyway вместо SchemaUtils — схему на проде нельзя пересоздавать</span></div>
+        <div class="r"><span class="k">Проблема</span><span>fat-jar терял плагины → сборка через distTar</span></div>
+        <div class="tg"><span>flyway</span><span>postgres</span><span>gradle</span></div>
       </div>
     </div>
-  </section>
-
-  <!-- Основной экран -->
-  <section id="app" class="hidden">
-    <header class="top">
-      <h1>DevLog</h1>
-      <div style="display:flex; align-items:center; gap:8px;">
-        <span class="muted" id="who"></span>
-        <button class="ghost theme-btn" title="Тема оформления"></button>
-        <button class="ghost" id="logout">Выйти</button>
-      </div>
-    </header>
-
-    <div class="card">
-      <div style="font-weight:700; margin-bottom:4px;">Что сделал сегодня?</div>
-      <div class="muted" style="font-size:13px;">Бросьте сюда сырые заметки — ИИ разберёт их на шаги, решения и итог.</div>
-      <div class="row">
-        <div>
-          <label>Дата работы</label>
-          <input id="occurredOn" type="date">
-        </div>
-        <div>
-          <label>Проект</label>
-          <select id="entryProject"><option value="">— без проекта —</option></select>
-        </div>
-      </div>
-      <label>Заметка</label>
-      <textarea id="rawText" placeholder="Напр.: чинил баг с виджетом — updateAll не звался при смене города, поправил, собрал v1.0.1"></textarea>
-      <div class="hint-row">
-        <span class="muted" id="draftHint"></span>
-        <span class="muted" id="counter"></span>
-      </div>
-      <div class="err" id="addErr"></div>
-      <button class="primary" id="addBtn" style="margin-top:6px;">Добавить запись</button>
-      <span class="muted" style="font-size:12px; margin-left:8px;">или Ctrl+Enter</span>
-    </div>
-
-    <!-- Календарь активности за год + серия дней -->
-    <div class="card" id="statsCard">
-      <div class="stats-head">
-        <span class="streak" id="streakText"></span>
-        <span class="muted" style="font-size:13px;" id="statsSummary"></span>
-      </div>
-      <div class="hm-scroll">
-        <div class="hm-months" id="heatmapMonths"></div>
-        <div class="heatmap" id="heatmap"></div>
-      </div>
-    </div>
-
-    <input id="searchBox" placeholder="Поиск по записям, сути и тегам" style="margin-bottom:10px;">
-
-    <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
-      <select id="feedFilter" style="max-width:220px;"><option value="">Все проекты</option></select>
-      <div style="display:flex; gap:8px;">
-        <button class="ghost" id="projectsBtn">Проекты</button>
-        <button class="ghost" id="githubBtn">GitHub</button>
-        <button class="ghost" id="gitlabBtn">GitLab</button>
-        <button class="ghost" id="textImportBtn">Импорт текста</button>
-        <button class="ghost" id="reportBtn">Отчёты</button>
-        <button class="ghost" id="refresh">Обновить</button>
-      </div>
-    </div>
-    <div id="filterRow" style="margin-top:10px; display:flex; gap:8px; flex-wrap:wrap;">
-      <span class="day-chip hidden" id="dayFilterChip"></span>
-      <span class="day-chip hidden" id="tagFilterChip"></span>
-    </div>
-    <div id="feed"></div>
-
-    <!-- Панель управления проектами -->
-    <div id="projectPanel" class="card hidden">
-      <div style="display:flex; justify-content:space-between; align-items:center;">
-        <b>Проекты</b>
-        <button class="ghost" id="projectClose">Закрыть</button>
-      </div>
-      <div class="muted" style="font-size:13px; margin-top:4px;">Группируйте записи по клиентам или продуктам. Для конфиденциального проекта можно выключить ИИ — его записи не отправляются на обработку.</div>
-      <div id="projectList" style="margin-top:8px;"></div>
-      <div class="row" style="margin-top:10px; align-items:flex-end;">
-        <div style="flex:2;">
-          <label>Название нового проекта</label>
-          <input id="newProjectName" placeholder="Напр.: Клиент Acme">
-        </div>
-        <div style="flex:0 0 auto; padding-bottom:9px;">
-          <label style="display:flex; align-items:center; gap:6px; margin:0; cursor:pointer;">
-            <input type="checkbox" id="newProjectAiOff" style="width:auto;"> ИИ выкл.
-          </label>
-        </div>
-      </div>
-      <button class="primary" id="addProjectBtn" style="margin-top:8px;">Добавить проект</button>
-    </div>
-
-    <!-- Панель импорта коммитов с GitHub -->
-    <div id="githubPanel" class="card hidden">
-      <div style="display:flex; justify-content:space-between; align-items:center;">
-        <b>Импорт коммитов с GitHub</b>
-        <button class="ghost" id="githubClose">Закрыть</button>
-      </div>
-      <div class="muted" style="font-size:13px; margin-top:4px;">
-        Коммиты за день превращаются в одну запись дневника — дальше её разбирает ИИ,
-        как обычную заметку. Без токена ниже — только публичная активность: открытые
-        репозитории и примерно последние 90 дней.
-      </div>
-
-      <label>Логин на GitHub</label>
-      <div class="row" style="align-items:flex-end;">
-        <div style="flex:2;"><input id="githubLogin" placeholder="например, vihrea1337"></div>
-        <div style="flex:0 0 auto; padding-bottom:0;">
-          <button class="ghost" id="githubSave">Сохранить</button>
-        </div>
-      </div>
-
-      <label style="margin-top:10px; display:block;">Личный токен GitHub (для приватных репозиториев)</label>
-      <div class="muted" style="font-size:13px;">
-        Необязательно. С токеном импорт увидит и приватные репозитории, а не только
-        публичную активность. Сам токен нигде не показывается после сохранения —
-        только статус ниже. Создать: GitHub → Settings → Developer settings →
-        Personal access tokens (достаточно классического токена без специальных scope,
-        публичная информация о событиях доступна и так).
-      </div>
-      <div class="row" style="align-items:flex-end; margin-top:4px;">
-        <div style="flex:2;">
-          <input id="githubToken" type="password" placeholder="ghp_…">
-        </div>
-        <div style="flex:0 0 auto; padding-bottom:0; display:flex; gap:6px;">
-          <button class="ghost" id="githubTokenSave">Привязать</button>
-          <button class="ghost" id="githubTokenRemove">Отвязать</button>
-        </div>
-      </div>
-      <span class="muted" id="githubTokenStatus" style="font-size:13px;"></span>
-
-      <div class="row" style="margin-top:10px;">
-        <div><label>С какого дня</label><input id="importFrom" type="date"></div>
-        <div><label>По какой день</label><input id="importTo" type="date"></div>
-      </div>
-      <button class="primary" id="importBtn" style="margin-top:10px;">Импортировать</button>
-      <span class="muted" id="importStatus" style="font-size:13px; margin-left:8px;"></span>
-    </div>
-
-    <!-- Панель импорта коммитов с GitLab -->
-    <div id="gitlabPanel" class="card hidden">
-      <div style="display:flex; justify-content:space-between; align-items:center;">
-        <b>Импорт коммитов с GitLab</b>
-        <button class="ghost" id="gitlabClose">Закрыть</button>
-      </div>
-      <div class="muted" style="font-size:13px; margin-top:4px;">
-        Та же идея, что у GitHub: коммиты за день становятся одной записью, дальше её
-        разбирает ИИ. У GitLab, в отличие от GitHub, нет анонимного/публичного доступа —
-        токен обязателен, поэтому логин указывать не нужно: импорт видит активность
-        владельца токена.
-      </div>
-
-      <label style="margin-top:10px; display:block;">Личный токен GitLab</label>
-      <div class="muted" style="font-size:13px;">
-        Обязательно. Токен нигде не показывается после сохранения — только статус ниже.
-        Создать: GitLab → Preferences → Access Tokens (достаточно scope <code>read_api</code>).
-      </div>
-      <div class="row" style="align-items:flex-end; margin-top:4px;">
-        <div style="flex:2;">
-          <input id="gitlabToken" type="password" placeholder="glpat-…">
-        </div>
-        <div style="flex:0 0 auto; padding-bottom:0; display:flex; gap:6px;">
-          <button class="ghost" id="gitlabTokenSave">Привязать</button>
-          <button class="ghost" id="gitlabTokenRemove">Отвязать</button>
-        </div>
-      </div>
-      <span class="muted" id="gitlabTokenStatus" style="font-size:13px;"></span>
-
-      <div class="row" style="margin-top:10px;">
-        <div><label>С какого дня</label><input id="gitlabImportFrom" type="date"></div>
-        <div><label>По какой день</label><input id="gitlabImportTo" type="date"></div>
-      </div>
-      <button class="primary" id="gitlabImportBtn" style="margin-top:10px;">Импортировать</button>
-      <span class="muted" id="gitlabImportStatus" style="font-size:13px; margin-left:8px;"></span>
-    </div>
-
-    <!-- Панель импорта произвольного текста (в т.ч. выгрузки Claude Code) -->
-    <div id="textImportPanel" class="card hidden">
-      <div style="display:flex; justify-content:space-between; align-items:center;">
-        <b>Импорт текста</b>
-        <button class="ghost" id="textImportClose">Закрыть</button>
-      </div>
-      <div class="muted" style="font-size:13px; margin-top:4px;">
-        Вставьте любой текст с датами вида ГГГГ-ММ-ДД внутри строк — например, лог сессии
-        Claude Code, экспорт чата или свои заметки. Текст разрежется по дням, каждый день
-        станет отдельной записью и дальше разберётся ИИ, как обычная заметка. Повторная
-        вставка того же текста не создаст дублей.
-      </div>
-      <textarea id="textImportInput" rows="10" style="width:100%; margin-top:8px; font-family:monospace; font-size:12px;"
-        placeholder="2026-09-01 обсудили офлайн-кэш ленты...&#10;2026-09-02 занялись импортом текста..."></textarea>
-      <button class="primary" id="textImportSubmit" style="margin-top:10px;">Импортировать</button>
-      <span class="muted" id="textImportStatus" style="font-size:13px; margin-left:8px;"></span>
-    </div>
-
-    <!-- Панель отчётов -->
-    <div id="reportPanel" class="card hidden">
-      <div style="display:flex; justify-content:space-between; align-items:center;">
-        <b>Отчёт за период</b>
-        <button class="ghost" id="reportClose">Закрыть</button>
-      </div>
-      <div class="muted" style="font-size:13px; margin-top:4px;">
-        Черновик собирается из ваших записей, ИИ причёсывает его в связный текст.
-        Перед отправкой работодателю отчёт можно поправить руками.
-      </div>
-
-      <div class="row" style="margin-top:10px;">
-        <div><label>С какого дня</label><input id="reportFrom" type="date"></div>
-        <div><label>По какой день</label><input id="reportTo" type="date"></div>
-      </div>
-      <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;">
-        <button class="ghost period-btn" data-period="week">Эта неделя</button>
-        <button class="ghost period-btn" data-period="month">Этот месяц</button>
-        <button class="ghost period-btn" data-period="prev">Прошлый месяц</button>
-      </div>
-      <button class="primary" id="reportBuild" style="margin-top:10px;">Собрать отчёт</button>
-      <span class="muted" id="reportStatus" style="font-size:13px; margin-left:8px;"></span>
-
-      <!-- Результат -->
-      <div id="reportResult" class="hidden" style="margin-top:14px; border-top:1px solid var(--line); padding-top:12px;">
-        <b id="reportTitle"></b>
-        <div id="reportPreview" class="report-preview"></div>
-        <textarea id="reportEditor" class="hidden" style="min-height:280px; margin-top:10px;"></textarea>
-        <div class="entry-actions" style="flex-wrap:wrap;">
-          <button class="ghost" id="reportEdit">Править текст</button>
-          <button class="primary hidden" id="reportSave">Сохранить правки</button>
-          <button class="ghost hidden" id="reportCancelEdit">Отмена</button>
-          <button class="ghost" id="reportShare">Поделиться ссылкой</button>
-          <button class="ghost hidden" id="reportRevoke">Отозвать ссылку</button>
-          <button class="ghost" id="reportDownload">Скачать .md</button>
-          <button class="ghost" id="reportPrint">Печать / PDF</button>
-          <button class="ghost" id="reportExportGithub">Экспортировать в GitHub</button>
-        </div>
-        <div id="reportLink" class="muted" style="font-size:13px; margin-top:6px;"></div>
-        <div id="reportExportStatus" class="muted" style="font-size:13px; margin-top:6px;"></div>
-      </div>
-
-      <!-- Ранее собранные отчёты -->
-      <div style="margin-top:16px;">
-        <div class="muted" style="font-size:13px; font-weight:600;">Собранные отчёты</div>
-        <div id="reportHistory"></div>
-      </div>
-    </div>
-  </section>
-
-  <!-- Подвал: ссылки на информационные страницы (статика рядом, стиль — info.css).
-       Виден всегда — и на экране входа, и после него. -->
-  <div class="muted" style="text-align:center; font-size:13px; margin:18px 0 8px;">
-    <a class="link" href="./install.html">О сервисе и Android-приложение</a> ·
-    <a class="link" href="./privacy.html">Конфиденциальность</a> ·
-    <a class="link" href="./terms.html">Условия</a>
   </div>
 
-</div>
+  <div class="auth-side">
+    <button class="btn ghost sm theme-btn" title="Тема оформления"><svg class="i"><use href="#i-theme"/></svg><span class="theme-label"></span></button>
+    <div class="auth-card">
+      <h2 id="authTitle">Вход</h2>
+
+      <!-- Демо-вход: виден, только если включён на сервере (DEMO_LOGIN_EMAIL). -->
+      <div class="demo-box hidden" id="demoBox">
+        <p><b>Посмотреть без регистрации.</b> Готовый дневник разработчика с отчётами — только для просмотра.</p>
+        <button class="btn primary" id="demoBtn"><svg class="i"><use href="#i-eye"/></svg>Открыть демо</button>
+      </div>
+      <div class="divider hidden" id="demoDivider">или войдите</div>
+
+      <label class="field hidden" id="nameField"><span>Имя</span><input id="name" placeholder="Как вас звать" autocomplete="name"></label>
+      <label class="field"><span>Email</span><input id="email" type="email" placeholder="you@example.com" autocomplete="username"></label>
+      <label class="field"><span>Пароль</span><input id="password" type="password" placeholder="минимум 6 символов" autocomplete="current-password"></label>
+      <div class="err" id="authErr"></div>
+      <button class="btn primary" id="authBtn" style="width:100%; padding:12px;">Войти</button>
+      <div class="switch"><span id="switchText">Нет аккаунта?</span> <a id="switchLink">Зарегистрироваться</a></div>
+      <div class="auth-links"><a href="./install.html">О сервисе и Android-приложение</a> · <a href="./privacy.html">Конфиденциальность</a> · <a href="./terms.html">Условия</a></div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== Приложение ===================== -->
+<section id="app" class="hidden">
+  <header class="topbar">
+    <div class="topbar-in">
+      <div class="brand"><span class="logo" aria-hidden="true">DL</span> DevLog</div>
+      <div class="spacer"></div>
+      <div class="who"><span class="avatar" id="avatar"></span><span class="name" id="who"></span></div>
+      <button class="btn ghost sm theme-btn" title="Тема оформления"><svg class="i"><use href="#i-theme"/></svg><span class="theme-label"></span></button>
+      <button class="btn ghost sm" id="logout" title="Выйти"><svg class="i"><use href="#i-logout"/></svg><span class="theme-label">Выйти</span></button>
+    </div>
+  </header>
+  <div class="ro-banner hidden" id="roBanner"><div><svg class="i"><use href="#i-eye"/></svg><span><b>Демо-режим.</b> Это пример дневника разработчика — смотреть можно всё, а менять нельзя.</span></div></div>
+
+  <div class="layout">
+    <main class="main">
+      <!-- Новая запись -->
+      <div class="card" id="composer">
+        <div class="composer-collapsed" id="composerCollapsed">
+          <span class="avatar"><svg class="i"><use href="#i-plus"/></svg></span>
+          <span class="fake">Что сделал сегодня? Пара строк как есть…</span>
+        </div>
+        <div class="hidden" id="composerOpen">
+          <div class="composer-head"><h2>Новая запись</h2><span class="muted" style="font-size:13px;">ИИ разберёт на шаги, решения и итог</span></div>
+          <div class="composer-grid">
+            <label class="field"><span>Дата работы</span><input id="occurredOn" type="date"></label>
+            <label class="field"><span>Проект</span><select id="entryProject"><option value="">— без проекта —</option></select></label>
+          </div>
+          <label class="field"><span>Заметка</span>
+            <textarea id="rawText" placeholder="Напр.: чинил баг с виджетом — updateAll не звался при смене города, поправил, собрал v1.0.1"></textarea>
+          </label>
+          <div class="composer-foot">
+            <span class="muted" style="font-size:13px;">Время:</span>
+            <div class="chips" id="timeChips">
+              <button class="chip" data-min="30">30 мин</button><button class="chip" data-min="60">1 ч</button>
+              <button class="chip" data-min="120">2 ч</button><button class="chip" data-min="240">4 ч</button><button class="chip" data-min="480">8 ч</button>
+            </div>
+          </div>
+          <div class="err" id="addErr"></div>
+          <div class="composer-foot">
+            <span class="hint" id="draftHint"></span><span class="hint" id="counter"></span>
+            <span class="grow"></span>
+            <span class="hint">Ctrl+Enter</span>
+            <button class="btn ghost" id="composerCancel">Свернуть</button>
+            <button class="btn primary" id="addBtn"><svg class="i"><use href="#i-plus"/></svg>Добавить</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Быстрые действия на телефоне (на широком экране — в боковой колонке) -->
+      <div class="mobile-actions">
+        <button class="btn ghost sm" data-open="reportPanel"><svg class="i"><use href="#i-report"/></svg>Отчёты</button>
+        <button class="btn ghost sm ro-hide" data-open="githubPanel"><svg class="i"><use href="#i-git"/></svg>GitHub</button>
+        <button class="btn ghost sm ro-hide" data-open="gitlabPanel"><svg class="i"><use href="#i-git"/></svg>GitLab</button>
+        <button class="btn ghost sm" data-open="projectPanel"><svg class="i"><use href="#i-folder"/></svg>Проекты</button>
+        <button class="btn ghost sm ro-hide" data-open="textImportPanel"><svg class="i"><use href="#i-upload"/></svg>Импорт текста</button>
+      </div>
+
+      <div class="toolbar">
+        <label class="search"><svg class="i"><use href="#i-search"/></svg><span class="sr">Поиск</span><input id="searchBox" placeholder="Поиск по записям, сути и тегам"></label>
+        <select id="feedFilter" aria-label="Проект"><option value="">Все проекты</option></select>
+        <button class="btn ghost icon" id="refresh" title="Обновить"><svg class="i"><use href="#i-refresh"/></svg></button>
+      </div>
+      <div class="filter-row" id="filterRow">
+        <span class="day-chip hidden" id="dayFilterChip"></span>
+        <span class="day-chip hidden" id="tagFilterChip"></span>
+      </div>
+      <div id="feed" class="main"></div>
+    </main>
+
+    <aside class="aside">
+      <div class="card" id="weekCard">
+        <p class="card-title">Последние 7 дней</p>
+        <div class="week-stats">
+          <div class="stat"><b id="wkDays">—</b><span id="wkDaysLabel">дней с записями</span></div>
+          <div class="stat"><b id="wkHours">—</b><span>учтено времени</span></div>
+          <div class="stat"><b id="wkEntries">—</b><span id="wkEntriesLabel">записей</span></div>
+        </div>
+        <div class="bars" id="wkBars"></div>
+      </div>
+
+      <div class="card" id="statsCard">
+        <div class="streak"><svg class="i" style="color:#f08a24"><use href="#i-flame"/></svg><span id="streakText"></span></div>
+        <div class="stats-line" id="statsSummary"></div>
+        <div class="hm-scroll" id="hmScroll">
+          <div class="hm-months" id="heatmapMonths"></div>
+          <div class="heatmap" id="heatmap"></div>
+        </div>
+      </div>
+
+      <div class="card actions-card">
+        <p class="card-title">Действия</p>
+        <div class="actions">
+          <button class="action" data-open="reportPanel"><span class="ico"><svg class="i"><use href="#i-sparkle"/></svg></span><span><b>Собрать отчёт</b><small>за неделю, месяц или свой период</small></span></button>
+          <button class="action ro-hide" data-open="githubPanel"><span class="ico"><svg class="i"><use href="#i-git"/></svg></span><span><b>Импорт с GitHub</b><small>коммиты превратятся в записи</small></span></button>
+          <button class="action ro-hide" data-open="gitlabPanel"><span class="ico"><svg class="i"><use href="#i-git"/></svg></span><span><b>Импорт с GitLab</b><small>по личному токену</small></span></button>
+          <button class="action ro-hide" data-open="textImportPanel"><span class="ico"><svg class="i"><use href="#i-upload"/></svg></span><span><b>Импорт текста</b><small>лог с датами, выгрузка чата</small></span></button>
+          <button class="action" data-open="projectPanel"><span class="ico"><svg class="i"><use href="#i-folder"/></svg></span><span><b>Проекты</b><small>группы записей и выключатель ИИ</small></span></button>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <footer class="links"><a href="./install.html">О сервисе и Android-приложение</a> · <a href="./privacy.html">Конфиденциальность</a> · <a href="./terms.html">Условия</a></footer>
+
+  <div class="backdrop hidden" id="backdrop"></div>
+
+  <!-- Проекты -->
+  <div id="projectPanel" class="card panel hidden" role="dialog" aria-modal="true" aria-label="Проекты">
+    <div class="panel-head"><b>Проекты</b><button class="btn ghost icon" id="projectClose" title="Закрыть"><svg class="i"><use href="#i-x"/></svg></button></div>
+    <p class="desc">Группируйте записи по клиентам или продуктам. Для конфиденциального проекта выключите ИИ — его записи не отправляются на обработку.</p>
+    <div id="projectList"></div>
+    <div class="inline ro-hide">
+      <label class="field"><span>Новый проект</span><input id="newProjectName" placeholder="Напр.: Клиент Acme"></label>
+      <label style="display:flex; align-items:center; gap:6px; cursor:pointer; padding-bottom:10px;"><input type="checkbox" id="newProjectAiOff" style="width:auto;"> ИИ выкл.</label>
+      <button class="btn primary" id="addProjectBtn">Добавить</button>
+    </div>
+  </div>
+
+  <!-- Импорт с GitHub -->
+  <div id="githubPanel" class="card panel hidden" role="dialog" aria-modal="true" aria-label="Импорт с GitHub">
+    <div class="panel-head"><b>Импорт коммитов с GitHub</b><button class="btn ghost icon" id="githubClose" title="Закрыть"><svg class="i"><use href="#i-x"/></svg></button></div>
+    <p class="desc">Коммиты за день превращаются в одну запись — дальше её разбирает ИИ, как обычную заметку. Без токена видна только публичная активность за последние ~90 дней.</p>
+    <div class="inline">
+      <label class="field"><span>Логин на GitHub</span><input id="githubLogin" placeholder="например, vihrea1337"></label>
+      <button class="btn ghost" id="githubSave">Сохранить</button>
+    </div>
+    <div class="inline">
+      <label class="field"><span>Личный токен (для приватных репозиториев, необязательно)</span><input id="githubToken" type="password" placeholder="ghp_…"></label>
+      <button class="btn ghost" id="githubTokenSave">Привязать</button>
+      <button class="btn ghost" id="githubTokenRemove">Отвязать</button>
+    </div>
+    <span class="status" id="githubTokenStatus"></span>
+    <div class="row2">
+      <label class="field"><span>С какого дня</span><input id="importFrom" type="date"></label>
+      <label class="field"><span>По какой день</span><input id="importTo" type="date"></label>
+    </div>
+    <div class="inline"><button class="btn primary" id="importBtn">Импортировать</button><span class="status" id="importStatus"></span></div>
+  </div>
+
+  <!-- Импорт с GitLab -->
+  <div id="gitlabPanel" class="card panel hidden" role="dialog" aria-modal="true" aria-label="Импорт с GitLab">
+    <div class="panel-head"><b>Импорт коммитов с GitLab</b><button class="btn ghost icon" id="gitlabClose" title="Закрыть"><svg class="i"><use href="#i-x"/></svg></button></div>
+    <p class="desc">Та же идея, что у GitHub. У GitLab нет публичного доступа, поэтому токен обязателен (scope <code>read_api</code>), а логин не нужен — импорт видит активность владельца токена.</p>
+    <div class="inline">
+      <label class="field"><span>Личный токен GitLab</span><input id="gitlabToken" type="password" placeholder="glpat-…"></label>
+      <button class="btn ghost" id="gitlabTokenSave">Привязать</button>
+      <button class="btn ghost" id="gitlabTokenRemove">Отвязать</button>
+    </div>
+    <span class="status" id="gitlabTokenStatus"></span>
+    <div class="row2">
+      <label class="field"><span>С какого дня</span><input id="gitlabImportFrom" type="date"></label>
+      <label class="field"><span>По какой день</span><input id="gitlabImportTo" type="date"></label>
+    </div>
+    <div class="inline"><button class="btn primary" id="gitlabImportBtn">Импортировать</button><span class="status" id="gitlabImportStatus"></span></div>
+  </div>
+
+  <!-- Импорт произвольного текста -->
+  <div id="textImportPanel" class="card panel hidden" role="dialog" aria-modal="true" aria-label="Импорт текста">
+    <div class="panel-head"><b>Импорт текста</b><button class="btn ghost icon" id="textImportClose" title="Закрыть"><svg class="i"><use href="#i-x"/></svg></button></div>
+    <p class="desc">Вставьте любой текст с датами вида ГГГГ-ММ-ДД в строках — лог сессии, экспорт чата, свои заметки. Каждый день станет отдельной записью. Повторная вставка дублей не создаст.</p>
+    <textarea id="textImportInput" rows="10" style="font-family:ui-monospace, Consolas, monospace; font-size:13px;" placeholder="2026-09-01 обсудили офлайн-кэш ленты...&#10;2026-09-02 занялись импортом текста..."></textarea>
+    <div class="inline"><button class="btn primary" id="textImportSubmit">Импортировать</button><span class="status" id="textImportStatus"></span></div>
+  </div>
+
+  <!-- Отчёты -->
+  <div id="reportPanel" class="card panel hidden" role="dialog" aria-modal="true" aria-label="Отчёты" style="width:min(860px, calc(100vw - 32px));">
+    <div class="panel-head"><b>Отчёт за период</b><button class="btn ghost icon" id="reportClose" title="Закрыть"><svg class="i"><use href="#i-x"/></svg></button></div>
+    <p class="desc">ИИ пишет текст по темам: результаты, решения, проблемы. Цифры и хронологию считает код. Перед отправкой отчёт можно поправить.</p>
+    <div class="ro-hide" style="display:grid; gap:10px;">
+      <div class="chips">
+        <button class="chip period-btn" data-period="week">Эта неделя</button>
+        <button class="chip period-btn" data-period="month">Этот месяц</button>
+        <button class="chip period-btn" data-period="prev">Прошлый месяц</button>
+      </div>
+      <div class="row2">
+        <label class="field"><span>С какого дня</span><input id="reportFrom" type="date"></label>
+        <label class="field"><span>По какой день</span><input id="reportTo" type="date"></label>
+      </div>
+      <div class="inline"><button class="btn primary" id="reportBuild"><svg class="i"><use href="#i-sparkle"/></svg>Собрать отчёт</button><span class="status" id="reportStatus"></span></div>
+      <div class="gen-progress hidden" id="genProgress"><div class="step"><span class="spinner"></span><span id="genStep">Читаю записи за период…</span></div></div>
+    </div>
+
+    <div id="reportResult" class="hidden" style="display:grid; gap:10px;">
+      <b id="reportTitle" style="font-size:16px;"></b>
+      <div id="reportPreview" class="report-preview"></div>
+      <textarea id="reportEditor" class="hidden" style="min-height:300px;"></textarea>
+      <div class="inline">
+        <button class="btn ghost sm ro-hide" id="reportEdit"><svg class="i"><use href="#i-edit"/></svg>Править</button>
+        <button class="btn primary sm hidden" id="reportSave">Сохранить</button>
+        <button class="btn ghost sm hidden" id="reportCancelEdit">Отмена</button>
+        <button class="btn primary sm ro-hide" id="reportShare">Получить ссылку</button>
+        <button class="btn ghost sm hidden ro-hide" id="reportRevoke">Отозвать ссылку</button>
+        <button class="btn ghost sm" id="reportDownload">Скачать .md</button>
+        <button class="btn ghost sm" id="reportPrint">PDF</button>
+        <button class="btn ghost sm ro-hide" id="reportExportGithub">В GitHub</button>
+      </div>
+      <div id="reportLink" class="status"></div>
+      <div id="reportExportStatus" class="status"></div>
+    </div>
+
+    <div>
+      <p class="card-title" style="margin:6px 0 4px;">Собранные отчёты</p>
+      <div id="reportHistory"></div>
+    </div>
+  </div>
+</section>
+
+<div class="toast hidden" id="toast"></div>
 
 <script>
   const TOKEN_KEY = 'devlog_token';
@@ -424,6 +588,8 @@
   let serverConfig = { aiEnabled: true, aiDailyLimit: 0 }; // включён ли ИИ на сервере
   let eventStream = null;   // открытое SSE-соединение: сервер сам сообщает, что запись готова
   let liveUpdates = false;  // подключено ли оно сейчас
+  let readOnly = false;     // демо-вход: только просмотр
+  let entryMinutes = null;  // выбранное «время» в форме новой записи
 
   // --- Обёртка над fetch: добавляет токен и JSON-заголовки ---
   async function api(path, { method = 'GET', body = null } = {}) {
@@ -434,8 +600,18 @@
     return fetch(path, { method, headers, body: body ? JSON.stringify(body) : null });
   }
 
-  const esc = s => (s ?? '').replace(/[&<>"]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
+  const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
   const $ = id => document.getElementById(id);
+  const icon = name => `<svg class="i"><use href="#i-${name}"/></svg>`;
+
+  // Короткое всплывающее сообщение внизу экрана (вместо alert).
+  let toastTimer = null;
+  function toast(text) {
+    $('toast').textContent = text;
+    $('toast').classList.remove('hidden');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => $('toast').classList.add('hidden'), 3200);
+  }
 
   // Дата в виде ГГГГ-ММ-ДД по МЕСТНОМУ времени.
   // toISOString() отдаёт время по Гринвичу: восточнее Лондона (Сургут — UTC+5) местная
@@ -444,9 +620,24 @@
     String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
   const parseYmd = s => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); };
 
+  /** Русское склонение после числа: plural(5, 'день', 'дня', 'дней') → «дней». */
+  function plural(n, one, few, many) {
+    const t = n % 100, o = n % 10;
+    if (t >= 11 && t <= 14) return many;
+    if (o === 1) return one;
+    if (o >= 2 && o <= 4) return few;
+    return many;
+  }
+  /** 90 → «1 ч 30 мин», 480 → «8 ч», 45 → «45 мин». */
+  function duration(min) {
+    const h = Math.floor(min / 60), m = min % 60;
+    if (!h) return m + ' мин';
+    return m ? `${h} ч ${m} мин` : `${h} ч`;
+  }
+
   // --- Тема оформления: система → тёмная → светлая → система ---
   const THEME_KEY = 'devlog_theme';
-  const THEME_LABEL = { system: '🌓 как в системе', dark: '🌙 тёмная', light: '☀️ светлая' };
+  const THEME_LABEL = { system: 'как в системе', dark: 'тёмная', light: 'светлая' };
 
   function currentTheme() {
     const t = localStorage.getItem(THEME_KEY);
@@ -461,7 +652,8 @@
       document.documentElement.setAttribute('data-theme', theme);
       localStorage.setItem(THEME_KEY, theme);
     }
-    document.querySelectorAll('.theme-btn').forEach(b => { b.textContent = THEME_LABEL[theme]; });
+    document.querySelectorAll('.theme-btn .theme-label').forEach(b => { b.textContent = THEME_LABEL[theme]; });
+    document.querySelectorAll('.theme-btn').forEach(b => { b.title = 'Тема: ' + THEME_LABEL[theme]; });
   }
 
   document.querySelectorAll('.theme-btn').forEach(b => {
@@ -480,19 +672,22 @@
     $('nameField').classList.toggle('hidden', m === 'login');
     $('switchText').textContent = m === 'login' ? 'Нет аккаунта?' : 'Уже есть аккаунт?';
     $('switchLink').textContent = m === 'login' ? 'Зарегистрироваться' : 'Войти';
+    $('password').autocomplete = m === 'login' ? 'current-password' : 'new-password';
     $('authErr').textContent = '';
   }
   $('switchLink').onclick = () => setMode(mode === 'login' ? 'register' : 'login');
 
   // --- Вход / регистрация ---
-  $('authBtn').onclick = async () => {
+  async function submitAuth() {
     const email = $('email').value.trim();
     const password = $('password').value;
     $('authErr').textContent = '';
+    if (!email || !password) { $('authErr').textContent = 'Введите email и пароль'; return; }
     const path = mode === 'login' ? '/api/auth/login' : '/api/auth/register';
     const body = mode === 'login'
       ? { email, password }
       : { email, password, displayName: $('name').value.trim() };
+    $('authBtn').disabled = true;
     try {
       const res = await api(path, { method: 'POST', body });
       const data = await res.json().catch(() => ({}));
@@ -500,11 +695,58 @@
       setToken(data.token);
       showApp(data.user);
     } catch (e) {
-      $('authErr').textContent = 'Сеть недоступна';
+      $('authErr').textContent = 'Нет связи с сервером';
+    } finally {
+      $('authBtn').disabled = false;
+    }
+  }
+  $('authBtn').onclick = submitAuth;
+  ['email', 'password', 'name'].forEach(id => $(id).addEventListener('keydown', e => { if (e.key === 'Enter') submitAuth(); }));
+
+  // Демо-вход: кнопка видна, только если сервер его разрешает (на время показа работодателю).
+  async function checkDemo() {
+    try {
+      const res = await fetch('/api/auth/demo');
+      const data = res.ok ? await res.json() : { enabled: false };
+      $('demoBox').classList.toggle('hidden', !data.enabled);
+      $('demoDivider').classList.toggle('hidden', !data.enabled);
+    } catch (e) { /* без кнопки демо страница всё равно работает */ }
+  }
+  $('demoBtn').onclick = async () => {
+    $('demoBtn').disabled = true;
+    try {
+      const res = await fetch('/api/auth/demo', { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { $('authErr').textContent = data.error || 'Демо-доступ сейчас выключен'; return; }
+      setToken(data.token);
+      showApp(data.user);
+    } finally {
+      $('demoBtn').disabled = false;
     }
   };
 
   $('logout').onclick = () => { stopLiveUpdates(); clearToken(); location.reload(); };
+
+  // --- Новая запись: свёрнута в строку, по клику разворачивается ---
+  function openComposer() {
+    $('composerCollapsed').classList.add('hidden');
+    $('composerOpen').classList.remove('hidden');
+    $('rawText').focus();
+  }
+  function closeComposer() {
+    $('composerOpen').classList.add('hidden');
+    $('composerCollapsed').classList.remove('hidden');
+  }
+  $('composerCollapsed').onclick = openComposer;
+  $('composerCancel').onclick = closeComposer;
+
+  document.querySelectorAll('#timeChips .chip').forEach(c => {
+    c.onclick = () => {
+      const m = Number(c.dataset.min);
+      entryMinutes = entryMinutes === m ? null : m;
+      document.querySelectorAll('#timeChips .chip').forEach(x => x.classList.toggle('on', Number(x.dataset.min) === entryMinutes));
+    };
+  });
 
   // --- Черновик: не терять недописанную заметку ---
   // Закрыл вкладку на середине мысли — текст должен остаться. Храним его в браузере
@@ -536,6 +778,7 @@
     if (saved) {
       $('rawText').value = saved;
       $('draftHint').textContent = 'восстановлен черновик';
+      openComposer();
     }
     updateCounter();
   }
@@ -544,6 +787,7 @@
   // Ctrl+Enter (на Mac ⌘+Enter) — отправить, не тянясь к мыши.
   $('rawText').addEventListener('keydown', e => {
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); $('addBtn').click(); }
+    if (e.key === 'Escape' && !$('rawText').value.trim()) closeComposer();
   });
 
   // --- Добавление записи ---
@@ -559,16 +803,20 @@
     try {
       const res = await api('/api/entries', {
         method: 'POST',
-        body: { occurredOn: $('occurredOn').value, rawText, projectId: $('entryProject').value || null },
+        body: { occurredOn: $('occurredOn').value, rawText, projectId: $('entryProject').value || null, timeSpentMin: entryMinutes },
       });
       if (res.ok) {
         $('rawText').value = '';
         localStorage.removeItem(DRAFT_KEY);
         $('draftHint').textContent = '';
+        entryMinutes = null;
+        document.querySelectorAll('#timeChips .chip').forEach(x => x.classList.remove('on'));
         updateCounter();
-        $('rawText').focus();
+        closeComposer();
+        toast('Запись добавлена — ИИ разберёт её за несколько секунд');
         await loadEntries();
         loadStats();
+        loadWeek();
       } else {
         const data = await res.json().catch(() => ({}));
         $('addErr').textContent = data.error || 'Не удалось сохранить (' + res.status + ')';
@@ -578,11 +826,11 @@
     }
   };
 
-  $('refresh').onclick = loadEntries;
+  $('refresh').onclick = () => { loadEntries(); loadStats(); loadWeek(); };
 
   const STATUS = {
-    queued: ['в очереди', 'b-queued'], processing: ['обрабатывается…', 'b-processing'],
-    structured: ['готово', 'b-structured'], failed: ['ошибка ИИ', 'b-failed'], draft: ['черновик', 'b-draft'],
+    queued: ['в очереди', 'b-queued'], processing: ['ИИ разбирает…', 'b-processing'],
+    structured: ['готово', 'b-structured'], failed: ['ошибка ИИ', 'b-failed'], draft: ['без ИИ', 'b-draft'],
   };
 
   // Если ИИ на сервере выключен (нет ключа), запись честно висит в очереди — так и пишем,
@@ -595,47 +843,57 @@
   }
 
   const projById = id => projects.find(p => p.id === id);
-  function projChipHtml(projectId) {
+  function projHtml(projectId) {
     const p = projectId && projById(projectId);
     if (!p) return '';
-    const color = p.color || 'var(--muted)';
-    return `<div style="margin-top:8px;"><span class="proj"><span class="dot" style="background:${esc(color)}"></span>${esc(p.name)}${p.aiEnabled ? '' : ' <span class="ai-off">ИИ выкл.</span>'}</span></div>`;
+    return `<span class="proj"><span class="dot" style="background:${esc(p.color || 'var(--muted)')}"></span>${esc(p.name)}</span>`
+      + (p.aiEnabled ? '' : '<span class="lock">ИИ выкл.</span>');
   }
 
   function structuredHtml(s) {
     if (!s) return '';
     const list = (title, arr) => (arr && arr.length)
-      ? `<h4>${title}</h4><ul>${arr.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : '';
-    const tags = (s.tags && s.tags.length)
-      ? `<div class="tags">${s.tags.map(t => `<span class="tag tag-btn" data-tag="${esc(t)}">${esc(t)}</span>`).join('')}</div>` : '';
+      ? `<div><h4>${title}</h4><ul>${arr.map(x => `<li>${esc(x)}</li>`).join('')}</ul></div>` : '';
     return `<div class="struct">
-      ${s.summary ? `<div><b>${esc(s.summary)}</b></div>` : ''}
-      ${list('Шаги', s.steps)}
+      ${list('Сделано', s.steps)}
       ${list('Решения', s.decisions)}
       ${list('Проблемы', s.problems)}
-      ${s.outcome ? `<h4>Итог</h4><div>${esc(s.outcome)}</div>` : ''}
-      ${tags}
+      ${s.outcome ? `<div><h4>Итог</h4><p>${esc(s.outcome)}</p></div>` : ''}
     </div>`;
   }
 
   function entryHtml(e) {
     const [label, cls] = statusOf(e);
+    const s = e.structured;
+    const hasAi = !!(s && s.summary);
     // Причину неудачи показываем прямо в карточке: «ошибка ИИ» без объяснения бесполезна.
-    const errHtml = e.aiError ? `<div class="ai-err">${esc(e.aiError)}</div>` : '';
-    return `<div class="card entry" data-id="${e.id}">
-      <div style="display:flex; justify-content:space-between; gap:10px;">
-        <div class="raw">${esc(e.rawText)}</div>
+    // У записи в очереди это не ошибка, а пояснение («ждём лимит ИИ-сервиса») — спокойным цветом.
+    const errHtml = e.aiError ? `<div class="ai-err${e.status === 'failed' ? ' bad' : ''}">${esc(e.aiError)}</div>` : '';
+    const tags = s && s.tags && s.tags.length
+      ? s.tags.map(t => `<span class="tag" data-tag="${esc(t)}">#${esc(t)}</span>`).join('') : '';
+    const long = !hasAi && e.rawText.length > 600;
+    const canOpen = hasAi || long;
+    return `<article class="card entry${hasAi ? ' has-ai' : ''}" data-id="${e.id}">
+      <div class="entry-top">
+        ${projHtml(e.projectId)}
+        ${e.timeSpentMin ? `<span class="time">${icon('clock')}${duration(e.timeSpentMin)}</span>` : ''}
+        <span class="grow"></span>
         <span class="badge ${cls}">${label}</span>
       </div>
+      ${hasAi ? `<p class="summary">${esc(s.summary)}</p>` : ''}
+      <p class="raw${long ? ' long' : ''}">${esc(e.rawText)}</p>
       ${errHtml}
-      ${projChipHtml(e.projectId)}
-      ${structuredHtml(e.structured)}
-      <div class="entry-actions">
-        <button class="ghost act-edit">Изменить</button>
-        <button class="ghost act-reprocess">Переобработать</button>
-        <button class="ghost act-delete">Удалить</button>
+      ${structuredHtml(s)}
+      <div class="entry-foot">
+        <div class="tags">${tags}</div>
+        ${canOpen ? `<button class="link-btn act-toggle">Подробнее ${icon('chev')}</button>` : ''}
+        <div class="entry-actions">
+          <button class="btn ghost icon sm act-edit" title="Изменить">${icon('edit')}</button>
+          <button class="btn ghost icon sm act-reprocess" title="Разобрать заново">${icon('refresh')}</button>
+          <button class="btn ghost icon sm act-delete" title="Удалить">${icon('trash')}</button>
+        </div>
       </div>
-    </div>`;
+    </article>`;
   }
 
   /**
@@ -645,36 +903,113 @@
    */
   function startEdit(card, entry) {
     const raw = card.querySelector('.raw');
-    const actions = card.querySelector('.entry-actions');
+    const foot = card.querySelector('.entry-foot');
     const box = document.createElement('textarea');
     box.className = 'edit-box';
     box.value = entry.rawText;
     raw.replaceWith(box);
-    actions.innerHTML = '<button class="primary act-save">Сохранить</button>' +
-      '<button class="ghost act-cancel">Отмена</button>';
+    foot.innerHTML = '<span style="flex:1"></span><button class="btn ghost sm act-cancel">Отмена</button>'
+      + '<button class="btn primary sm act-save">Сохранить</button>';
     box.focus();
     box.setSelectionRange(box.value.length, box.value.length);
 
     const save = async () => {
       const text = box.value.trim();
       if (!text) { box.focus(); return; }
-      actions.querySelector('.act-save').disabled = true;
+      foot.querySelector('.act-save').disabled = true;
       const res = await api('/api/entries/' + entry.id, { method: 'PUT', body: { rawText: text } });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        alert(data.error || 'Не удалось сохранить (' + res.status + ')');
-        actions.querySelector('.act-save').disabled = false;
+        toast(data.error || 'Не удалось сохранить (' + res.status + ')');
+        foot.querySelector('.act-save').disabled = false;
         return;
       }
       loadEntries();
     };
 
-    actions.querySelector('.act-save').onclick = save;
-    actions.querySelector('.act-cancel').onclick = loadEntries;
+    foot.querySelector('.act-save').onclick = save;
+    foot.querySelector('.act-cancel').onclick = loadEntries;
     box.addEventListener('keydown', e => {
       if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); save(); }
       if (e.key === 'Escape') loadEntries();
     });
+  }
+
+  // --- Лента ---
+  // Лента показывается порциями: 60+ развёрнутых записей сразу — это длинная простыня,
+  // в которой ничего не найти. Следующая порция — по кнопке «Показать ещё».
+  const PAGE = 20;
+  let shown = PAGE;
+  let lastEntries = [];
+  const prevStatus = new Map(); // id → статус при прошлой загрузке: чтобы подсветить «только что разобранные»
+  let firstLoad = true;
+
+  function renderSkeleton() {
+    $('feed').innerHTML = [0, 1, 2].map(() =>
+      '<div class="card skel"><i style="width:30%"></i><i style="width:85%; height:16px"></i><i style="width:95%"></i><i style="width:60%"></i></div>').join('');
+  }
+
+  function renderFeed() {
+    const feed = $('feed');
+    const entries = lastEntries;
+    if (!entries.length) {
+      const filtered = dayFilter || tagFilter || searchQuery || $('feedFilter').value;
+      feed.innerHTML = `<div class="card empty"><b>${filtered ? 'Ничего не нашлось' : 'Пока пусто'}</b>`
+        + (filtered ? 'Попробуйте снять фильтры.' : 'Нажмите «Что сделал сегодня?» и напишите пару строк — ИИ разложит их на шаги, решения и итог.')
+        + '</div>';
+      return;
+    }
+    const visible = entries.slice(0, shown);
+    // Учтённое время по дням — по всем загруженным записям, а не только видимым.
+    const minutesByDay = {};
+    for (const e of entries) if (e.timeSpentMin) minutesByDay[e.occurredOn] = (minutesByDay[e.occurredOn] || 0) + e.timeSpentMin;
+
+    let html = '', lastDay = null;
+    for (const e of visible) {
+      if (e.occurredOn !== lastDay) {
+        const m = minutesByDay[e.occurredOn];
+        html += `<div class="day"><b>${esc(dayTitle(e.occurredOn))}</b><span>${m ? duration(m) : ''}</span></div>`;
+        lastDay = e.occurredOn;
+      }
+      html += entryHtml(e);
+    }
+    if (entries.length > shown) {
+      html += `<button class="btn ghost more" id="moreBtn">Показать ещё (${entries.length - shown})</button>`;
+    }
+    feed.innerHTML = html;
+    if ($('moreBtn')) $('moreBtn').onclick = () => { shown += PAGE; renderFeed(); };
+
+    // Кнопки на карточках.
+    const byId = Object.fromEntries(entries.map(e => [e.id, e]));
+    feed.querySelectorAll('.entry').forEach(card => {
+      const id = card.dataset.id;
+      const e = byId[id];
+      // Запись только что разобрана ИИ (была в очереди при прошлой загрузке) — подсветим её.
+      const before = prevStatus.get(id);
+      if (!firstLoad && (before === 'queued' || before === 'processing') && e.status === 'structured') card.classList.add('fresh');
+      const toggle = card.querySelector('.act-toggle');
+      if (toggle) toggle.onclick = () => {
+        card.classList.toggle('open');
+        toggle.innerHTML = (card.classList.contains('open') ? 'Свернуть ' : 'Подробнее ') + icon('chev');
+      };
+      card.querySelector('.act-edit').onclick = () => startEdit(card, e);
+      card.querySelectorAll('.tag').forEach(t => {
+        t.onclick = () => setTagFilter(t.dataset.tag === tagFilter ? null : t.dataset.tag);
+      });
+      card.querySelector('.act-delete').onclick = async () => {
+        if (!confirm('Удалить запись?')) return;
+        await api('/api/entries/' + id, { method: 'DELETE' });
+        toast('Запись удалена');
+        loadEntries(); loadStats(); loadWeek();
+      };
+      card.querySelector('.act-reprocess').onclick = async () => {
+        await api('/api/entries/' + id + '/reprocess', { method: 'POST' });
+        toast('Отправили на разбор заново');
+        loadEntries();
+      };
+    });
+    entries.forEach(e => prevStatus.set(e.id, e.status));
+    firstLoad = false;
   }
 
   async function loadEntries() {
@@ -687,46 +1022,46 @@
     const query = params.toString();
     const res = await api('/api/entries' + (query ? '?' + query : ''));
     if (res.status === 401) { clearToken(); location.reload(); return; }
-    const entries = await res.json();
-    const feed = $('feed');
-    if (!entries.length) {
-      feed.innerHTML = '<div class="muted" style="margin-top:14px;">'
-        + (dayFilter || tagFilter || searchQuery ? 'Ничего не нашлось — попробуйте снять фильтры.'
-                                                 : 'Пока пусто. Добавьте первую запись выше.')
-        + '</div>';
-      return;
-    }
-    let html = '', lastDay = null;
-    for (const e of entries) {
-      if (e.occurredOn !== lastDay) { html += `<div class="day">${esc(dayTitle(e.occurredOn))}</div>`; lastDay = e.occurredOn; }
-      html += entryHtml(e);
-    }
-    feed.innerHTML = html;
-    // Кнопки на карточках.
-    const byId = Object.fromEntries(entries.map(e => [e.id, e]));
-    feed.querySelectorAll('.entry').forEach(card => {
-      const id = card.dataset.id;
-      card.querySelector('.act-edit').onclick = () => startEdit(card, byId[id]);
-      card.querySelectorAll('.tag-btn').forEach(t => {
-        t.onclick = () => setTagFilter(t.dataset.tag === tagFilter ? null : t.dataset.tag);
-      });
-      card.querySelector('.act-delete').onclick = async () => {
-        if (!confirm('Удалить запись?')) return;
-        await api('/api/entries/' + id, { method: 'DELETE' });
-        loadEntries();
-        loadStats();
-      };
-      card.querySelector('.act-reprocess').onclick = async () => {
-        await api('/api/entries/' + id + '/reprocess', { method: 'POST' });
-        loadEntries();
-      };
-    });
+    lastEntries = await res.json();
+    renderFeed();
     // Запасной вариант: если живого соединения нет (старый браузер, прокси режет SSE),
     // возвращаемся к опросу раз в несколько секунд. При выключенном ИИ ждать нечего.
-    const waiting = entries.some(e => e.status === 'queued' || e.status === 'processing');
+    const waiting = lastEntries.some(e => e.status === 'queued' || e.status === 'processing');
     if (!liveUpdates && serverConfig.aiEnabled && waiting) {
       refreshTimer = setTimeout(loadEntries, 4000);
     }
+  }
+
+  // --- Сводка за последние 7 дней: дни, часы, записи и столбики по дням ---
+  async function loadWeek() {
+    const to = new Date(), from = new Date();
+    from.setDate(from.getDate() - 6);
+    const res = await api(`/api/entries?from=${ymd(from)}&to=${ymd(to)}`);
+    if (!res.ok) return;
+    const list = await res.json();
+    const days = {}, minutes = {};
+    for (const e of list) {
+      days[e.occurredOn] = (days[e.occurredOn] || 0) + 1;
+      minutes[e.occurredOn] = (minutes[e.occurredOn] || 0) + (e.timeSpentMin || 0);
+    }
+    const activeDays = Object.keys(days).length;
+    const totalMin = Object.values(minutes).reduce((a, b) => a + b, 0);
+    $('wkDays').textContent = activeDays;
+    $('wkDaysLabel').textContent = plural(activeDays, 'день', 'дня', 'дней') + ' с записями';
+    $('wkHours').textContent = totalMin ? (Math.round(totalMin / 6) / 10).toLocaleString('ru') + ' ч' : '0';
+    $('wkEntries').textContent = list.length;
+    $('wkEntriesLabel').textContent = plural(list.length, 'запись', 'записи', 'записей');
+    // Столбики: высота — часы за день (если время не указывали — число записей).
+    const keys = [];
+    for (let i = 6; i >= 0; i--) { const d = new Date(); d.setDate(d.getDate() - i); keys.push(ymd(d)); }
+    const value = k => minutes[k] || (days[k] || 0) * 60;
+    const max = Math.max(1, ...keys.map(value));
+    const WD = ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
+    $('wkBars').innerHTML = keys.map(k => {
+      const v = value(k);
+      const title = days[k] ? `${days[k]} ${plural(days[k], 'запись', 'записи', 'записей')}${minutes[k] ? ', ' + duration(minutes[k]) : ''}` : 'нет записей';
+      return `<div class="bar" title="${k}: ${title}"><i class="${v ? '' : 'zero'}" style="height:${v ? Math.max(8, Math.round(64 * v / max)) : 4}px"></i><span>${WD[parseYmd(k).getDay()]}</span></div>`;
+    }).join('');
   }
 
   // --- Календарь активности («летопись» одним взглядом) ---
@@ -756,14 +1091,6 @@
     return 4;
   }
 
-  function pluralDays(n) {
-    const t = n % 100, o = n % 10;
-    if (t >= 11 && t <= 14) return 'дней';
-    if (o === 1) return 'день';
-    if (o >= 2 && o <= 4) return 'дня';
-    return 'дней';
-  }
-
   function renderHeatmap(s) {
     const days = s.days || {};
     const start = parseYmd(s.from), end = parseYmd(s.to);
@@ -784,7 +1111,7 @@
         const key = ymd(cursor);
         const n = days[key] || 0;
         const outside = cursor < start || cursor > end;
-        const title = outside ? '' : key + ' · ' + (n ? n + ' зап.' : 'нет записей');
+        const title = outside ? '' : key + ' · ' + (n ? n + ' ' + plural(n, 'запись', 'записи', 'записей') : 'нет записей');
         cells.push(`<div class="hm-cell l${levelOf(n)}${outside ? ' hm-out' : ''}"`
           + ` title="${title}" data-day="${key}"></div>`);
         cursor.setDate(cursor.getDate() + 1);
@@ -793,6 +1120,9 @@
 
     $('heatmap').innerHTML = cells.join('');
     $('heatmapMonths').innerHTML = months.join('');
+    // Свежие недели — справа. В узкой колонке и на телефоне весь год не влезает:
+    // прокручиваем к концу, чтобы сразу было видно последние месяцы, а не пустые старые.
+    requestAnimationFrame(() => { $('hmScroll').scrollLeft = $('hmScroll').scrollWidth; });
 
     // Клик по дню — показать записи только за этот день (повторный клик снимает фильтр).
     $('heatmap').querySelectorAll('.hm-cell').forEach(cell => {
@@ -803,10 +1133,10 @@
 
     const streak = s.currentStreak;
     $('streakText').textContent = streak
-      ? '🔥 ' + streak + ' ' + pluralDays(streak) + ' подряд'
+      ? streak + ' ' + plural(streak, 'день', 'дня', 'дней') + ' подряд'
       : 'Серия прервана — самое время записать сегодняшнее';
     $('statsSummary').textContent =
-      `${s.totalEntries} зап. за год · ${s.activeDays} активных дней · рекорд ${s.longestStreak}`;
+      `${s.totalEntries} ${plural(s.totalEntries, 'запись', 'записи', 'записей')} за год · ${s.activeDays} ${plural(s.activeDays, 'активный день', 'активных дня', 'активных дней')} · рекорд серии ${s.longestStreak}`;
   }
 
   async function loadStats() {
@@ -828,13 +1158,14 @@
 
   function renderFilterChips() {
     $('dayFilterChip').classList.toggle('hidden', !dayFilter);
-    if (dayFilter) $('dayFilterChip').textContent = dayTitle(dayFilter) + ' ✕';
+    if (dayFilter) $('dayFilterChip').innerHTML = esc(dayTitle(dayFilter)) + ' ' + icon('x');
     $('tagFilterChip').classList.toggle('hidden', !tagFilter);
-    if (tagFilter) $('tagFilterChip').textContent = '#' + tagFilter + ' ✕';
+    if (tagFilter) $('tagFilterChip').innerHTML = '#' + esc(tagFilter) + ' ' + icon('x');
   }
 
   function setDayFilter(day) {
     dayFilter = day;
+    shown = PAGE;
     renderFilterChips();
     markSelectedDay();
     loadEntries();
@@ -842,6 +1173,7 @@
 
   function setTagFilter(tag) {
     tagFilter = tag;
+    shown = PAGE;
     renderFilterChips();
     loadEntries();
   }
@@ -855,15 +1187,15 @@
     clearTimeout(searchTimer);
     searchTimer = setTimeout(() => {
       searchQuery = $('searchBox').value.trim();
+      shown = PAGE;
       loadEntries();
     }, 300);
   });
 
   // --- Живые обновления: сервер сам сообщает, что запись обработана ---
-  // Раньше страница опрашивала сервер каждые 4 секунды. Теперь держим одно открытое
-  // соединение (SSE) и обновляем ленту по событию. Браузерный EventSource не умеет
-  // добавлять заголовок Authorization, поэтому токен кладём в cookie с узким путём:
-  // она уходит только на /api/events и не светится в адресной строке и логах прокси.
+  // Держим одно открытое соединение (SSE) и обновляем ленту по событию. Браузерный
+  // EventSource не умеет добавлять заголовок Authorization, поэтому токен кладём в cookie
+  // с узким путём: она уходит только на /api/events и не светится в адресной строке и логах.
   function startLiveUpdates() {
     if (!window.EventSource || !getToken()) return;
     document.cookie = 'devlog_sse=' + getToken() + '; path=/api/events; SameSite=Strict'
@@ -871,7 +1203,7 @@
     stopLiveUpdates();
     eventStream = new EventSource('/api/events');
     eventStream.addEventListener('ready', () => { liveUpdates = true; });
-    eventStream.addEventListener('entry', () => { loadEntries(); loadStats(); });
+    eventStream.addEventListener('entry', () => { loadEntries(); loadStats(); loadWeek(); });
     eventStream.addEventListener('unauthorized', () => { stopLiveUpdates(); });
     // При обрыве браузер переподключается сам; до этого работает запасной опрос.
     eventStream.onerror = () => { liveUpdates = false; };
@@ -892,33 +1224,75 @@
   // Статус токена GitHub — сам токен никогда не приходит с сервера, только этот флаг.
   function updateGithubTokenStatus(user) {
     $('githubTokenStatus').textContent = user && user.githubTokenBound
-      ? 'привязан — импорт видит и приватные репозитории'
-      : 'не привязан — импорт видит только публичную активность';
+      ? 'Токен привязан — импорт видит и приватные репозитории'
+      : 'Токен не привязан — импорт видит только публичную активность';
   }
 
   // Статус токена GitLab — у GitLab токен обязателен для любого импорта (не только приватного).
   function updateGitlabTokenStatus(user) {
     $('gitlabTokenStatus').textContent = user && user.gitlabTokenBound
-      ? 'привязан — можно импортировать'
-      : 'не привязан — без токена импортировать нечего';
+      ? 'Токен привязан — можно импортировать'
+      : 'Токен не привязан — без него импортировать нечего';
   }
 
   async function showApp(user) {
     $('auth').classList.add('hidden');
     $('app').classList.remove('hidden');
-    $('who').textContent = user ? user.displayName : '';
+    readOnly = !!(user && user.readOnly);
+    document.body.classList.toggle('ro', readOnly);
+    $('roBanner').classList.toggle('hidden', !readOnly);
+    const name = user ? user.displayName : '';
+    $('who').textContent = name;
+    $('avatar').textContent = (name || '?').trim().charAt(0).toUpperCase();
     if (user && user.githubLogin) $('githubLogin').value = user.githubLogin;
     updateGithubTokenStatus(user);
     updateGitlabTokenStatus(user);
     $('occurredOn').value = ymd(new Date());
-    restoreDraft();
-    $('rawText').focus();
+    if (!readOnly) restoreDraft();
+    renderSkeleton();
     startLiveUpdates();
     loadStats();
+    loadWeek();
     await loadConfig();
-    loadProjects();
+    await loadProjects();
     loadEntries();
   }
+
+  // --- Модальные панели (проекты, импорт, отчёты) ---
+  const PANELS = ['projectPanel', 'githubPanel', 'gitlabPanel', 'textImportPanel', 'reportPanel'];
+  const PANEL_OPENERS = {
+    githubPanel: () => {
+      if (!$('importFrom').value) {
+        const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - 7);
+        $('importFrom').value = ymd(weekAgo); $('importTo').value = ymd(new Date());
+      }
+    },
+    gitlabPanel: () => {
+      if (!$('gitlabImportFrom').value) {
+        const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - 7);
+        $('gitlabImportFrom').value = ymd(weekAgo); $('gitlabImportTo').value = ymd(new Date());
+      }
+    },
+    reportPanel: () => {
+      if (!$('reportFrom').value) setPeriod('month');
+      loadReportHistory();
+    },
+  };
+  function openPanel(id) {
+    PANELS.forEach(p => $(p).classList.toggle('hidden', p !== id));
+    $('backdrop').classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
+    (PANEL_OPENERS[id] || (() => {}))();
+  }
+  function closePanels() {
+    PANELS.forEach(p => $(p).classList.add('hidden'));
+    $('backdrop').classList.add('hidden');
+    document.body.style.overflow = '';
+  }
+  document.querySelectorAll('[data-open]').forEach(b => { b.onclick = () => openPanel(b.dataset.open); });
+  $('backdrop').onclick = closePanels;
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('backdrop').classList.contains('hidden')) closePanels(); });
+  ['projectClose', 'githubClose', 'gitlabClose', 'textImportClose', 'reportClose'].forEach(id => { $(id).onclick = closePanels; });
 
   // --- Проекты ---
   function fillProjectSelects() {
@@ -933,30 +1307,23 @@
 
   function renderProjectList() {
     const box = $('projectList');
-    if (!projects.length) { box.innerHTML = '<div class="muted" style="font-size:13px;">Пока нет проектов.</div>'; return; }
+    if (!projects.length) { box.innerHTML = '<div class="status">Пока нет проектов.</div>'; return; }
     box.innerHTML = projects.map(p => {
-      const color = p.color || 'var(--muted)';
       const exportOn = !!p.githubExportRepo;
       return `<div class="proj-row" data-id="${p.id}">
-        <span class="proj"><span class="dot" style="background:${esc(color)}"></span>${esc(p.name)}${p.aiEnabled ? '' : ' <span class="ai-off">ИИ выкл.</span>'}${exportOn ? ' <span class="ai-off" style="background:none;">GitHub-экспорт вкл.</span>' : ''}</span>
-        <span>
-          <button class="ghost proj-export-toggle">GitHub-экспорт</button>
-          <button class="ghost proj-del">Удалить</button>
+        <span>${projHtml(p.id)}${exportOn ? ' <span class="pill-ok">экспорт в GitHub</span>' : ''}</span>
+        <span class="ro-hide" style="display:flex; gap:6px;">
+          <button class="btn ghost sm proj-export-toggle">GitHub-экспорт</button>
+          <button class="btn ghost sm proj-del">Удалить</button>
         </span>
       </div>
-      <div class="proj-export-form hidden" style="margin:0 0 10px; padding:8px; border:1px solid var(--line); border-radius:8px;">
-        <div class="muted" style="font-size:12px; margin-bottom:6px;">
-          Отчёты этого проекта можно вручную положить в файл в вашем репозитории (по кнопке
-          на отчёте) — рядом с настоящими коммитами появляется человеческое "что и зачем делалось".
-          Нужен привязанный личный токен GitHub (см. панель GitHub) с правом записи в репозиторий.
+      <div class="proj-export-form hidden">
+        <div class="status">Отчёты этого проекта можно положить файлом в ваш репозиторий (кнопка «В GitHub» на отчёте) — рядом с коммитами появится человеческое «что и зачем делалось». Нужен привязанный токен GitHub с правом записи.</div>
+        <div class="row2">
+          <label class="field"><span>Репозиторий (owner/repo)</span><input class="proj-export-repo" placeholder="vihrea1337/devlog" value="${esc(p.githubExportRepo || '')}"></label>
+          <label class="field"><span>Путь до файла</span><input class="proj-export-path" placeholder="docs/devlog.md" value="${esc(p.githubExportPath || '')}"></label>
         </div>
-        <div class="row">
-          <div style="flex:2;"><label>Репозиторий (owner/repo)</label><input class="proj-export-repo" placeholder="например, vihrea1337/devlog" value="${esc(p.githubExportRepo || '')}"></div>
-          <div style="flex:2;"><label>Путь до файла</label><input class="proj-export-path" placeholder="docs/devlog.md" value="${esc(p.githubExportPath || '')}"></div>
-        </div>
-        <div class="muted" style="font-size:12px; margin-top:4px;">Пустой репозиторий — экспорт выключен. Пустой путь при заданном репозитории — подставится docs/devlog.md.</div>
-        <button class="ghost proj-export-save" style="margin-top:6px;">Сохранить</button>
-        <span class="muted proj-export-status" style="font-size:13px; margin-left:8px;"></span>
+        <div class="inline"><button class="btn ghost sm proj-export-save">Сохранить</button><span class="status proj-export-status"></span></div>
       </div>`;
     }).join('');
     box.querySelectorAll('.proj-row').forEach(row => {
@@ -997,9 +1364,7 @@
     renderProjectList();
   }
 
-  $('projectsBtn').onclick = () => $('projectPanel').classList.toggle('hidden');
-  $('projectClose').onclick = () => $('projectPanel').classList.add('hidden');
-  $('feedFilter').onchange = loadEntries;
+  $('feedFilter').onchange = () => { shown = PAGE; loadEntries(); };
 
   $('addProjectBtn').onclick = async () => {
     const name = $('newProjectName').value.trim();
@@ -1023,23 +1388,10 @@
   // --- Импорт коммитов с GitHub ---
   // Киллер-фича из концепции: «нет истории кроме коммитов» превращается в дневник,
   // который заполняется сам. Токен не нужен — берём публичную активность.
-  $('githubBtn').onclick = () => {
-    $('githubPanel').classList.toggle('hidden');
-    if ($('githubPanel').classList.contains('hidden')) return;
-    if (!$('importFrom').value) {
-      const weekAgo = new Date();
-      weekAgo.setDate(weekAgo.getDate() - 7);
-      $('importFrom').value = ymd(weekAgo);
-      $('importTo').value = ymd(new Date());
-    }
-    $('githubPanel').scrollIntoView({ behavior: 'smooth' });
-  };
-  $('githubClose').onclick = () => $('githubPanel').classList.add('hidden');
-
   $('githubSave').onclick = async () => {
     const res = await api('/api/me', { method: 'PUT', body: { githubLogin: $('githubLogin').value.trim() } });
     const data = await res.json().catch(() => ({}));
-    $('importStatus').textContent = res.ok ? 'логин сохранён' : (data.error || 'не сохранилось');
+    $('importStatus').textContent = res.ok ? 'Логин сохранён' : (data.error || 'не сохранилось');
   };
 
   $('githubTokenSave').onclick = async () => {
@@ -1059,53 +1411,38 @@
     updateGithubTokenStatus(data);
   };
 
+  function importSummary(data, provider) {
+    return (data.commits
+      ? `Коммитов: ${data.commits}, новых записей: ${data.created}` + (data.skipped ? `, уже были: ${data.skipped}` : '')
+      : 'За этот период коммитов не нашлось') +
+      (data.truncated ? ` (упёрлись в лимит запросов к ${provider} — часть пушей не проверена, попробуйте период короче)` : '');
+  }
+
   $('importBtn').onclick = async () => {
     $('importBtn').disabled = true;
     $('importStatus').textContent = 'Спрашиваем GitHub…';
     try {
       const res = await api('/api/import/github', {
         method: 'POST',
-        body: {
-          periodStart: $('importFrom').value,
-          periodEnd: $('importTo').value,
-          projectId: $('feedFilter').value || null,
-        },
+        body: { periodStart: $('importFrom').value, periodEnd: $('importTo').value, projectId: $('feedFilter').value || null },
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) { $('importStatus').textContent = data.error || 'Не вышло (' + res.status + ')'; return; }
-      $('importStatus').textContent = (data.commits
-        ? `коммитов: ${data.commits}, записей создано: ${data.created}` +
-          (data.skipped ? `, уже было: ${data.skipped}` : '')
-        : 'за этот период коммитов не нашлось') +
-        (data.truncated ? ' (упёрлись в лимит запросов к GitHub — часть пушей не проверена, попробуйте период короче)' : '');
-      loadEntries();
-      loadStats();
+      $('importStatus').textContent = importSummary(data, 'GitHub');
+      loadEntries(); loadStats(); loadWeek();
     } finally {
       $('importBtn').disabled = false;
     }
   };
 
   // --- Импорт коммитов с GitLab (та же идея, что у GitHub, но токен обязателен) ---
-  $('gitlabBtn').onclick = () => {
-    $('gitlabPanel').classList.toggle('hidden');
-    if ($('gitlabPanel').classList.contains('hidden')) return;
-    if (!$('gitlabImportFrom').value) {
-      const weekAgo = new Date();
-      weekAgo.setDate(weekAgo.getDate() - 7);
-      $('gitlabImportFrom').value = ymd(weekAgo);
-      $('gitlabImportTo').value = ymd(new Date());
-    }
-    $('gitlabPanel').scrollIntoView({ behavior: 'smooth' });
-  };
-  $('gitlabClose').onclick = () => $('gitlabPanel').classList.add('hidden');
-
   $('gitlabTokenSave').onclick = async () => {
     const token = $('gitlabToken').value.trim();
     if (!token) { $('gitlabTokenStatus').textContent = 'Вставьте токен'; return; }
     const res = await api('/api/me/gitlab-token', { method: 'POST', body: { token } });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) { $('gitlabTokenStatus').textContent = data.error || 'не сохранилось'; return; }
-    $('gitlabToken').value = ''; // поле не должно хранить токен дольше, чем нужно для отправки
+    $('gitlabToken').value = '';
     updateGitlabTokenStatus(data);
   };
 
@@ -1122,50 +1459,31 @@
     try {
       const res = await api('/api/import/gitlab', {
         method: 'POST',
-        body: {
-          periodStart: $('gitlabImportFrom').value,
-          periodEnd: $('gitlabImportTo').value,
-          projectId: $('feedFilter').value || null,
-        },
+        body: { periodStart: $('gitlabImportFrom').value, periodEnd: $('gitlabImportTo').value, projectId: $('feedFilter').value || null },
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) { $('gitlabImportStatus').textContent = data.error || 'Не вышло (' + res.status + ')'; return; }
-      $('gitlabImportStatus').textContent = (data.commits
-        ? `коммитов: ${data.commits}, записей создано: ${data.created}` +
-          (data.skipped ? `, уже было: ${data.skipped}` : '')
-        : 'за этот период коммитов не нашлось') +
-        (data.truncated ? ' (упёрлись в лимит запросов к GitLab — часть пушей не проверена, попробуйте период короче)' : '');
-      loadEntries();
-      loadStats();
+      $('gitlabImportStatus').textContent = importSummary(data, 'GitLab');
+      loadEntries(); loadStats(); loadWeek();
     } finally {
       $('gitlabImportBtn').disabled = false;
     }
   };
 
   // --- Импорт произвольного текста (в т.ч. выгрузки Claude Code) ---
-  $('textImportBtn').onclick = () => {
-    $('textImportPanel').classList.toggle('hidden');
-    if (!$('textImportPanel').classList.contains('hidden')) $('textImportPanel').scrollIntoView({ behavior: 'smooth' });
-  };
-  $('textImportClose').onclick = () => $('textImportPanel').classList.add('hidden');
-
   $('textImportSubmit').onclick = async () => {
     const text = $('textImportInput').value.trim();
     if (!text) { $('textImportStatus').textContent = 'Вставьте текст'; return; }
     $('textImportSubmit').disabled = true;
     $('textImportStatus').textContent = 'Разбираем…';
     try {
-      const res = await api('/api/import/text', {
-        method: 'POST',
-        body: { text, projectId: $('feedFilter').value || null },
-      });
+      const res = await api('/api/import/text', { method: 'POST', body: { text, projectId: $('feedFilter').value || null } });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) { $('textImportStatus').textContent = data.error || 'Не вышло (' + res.status + ')'; return; }
       $('textImportStatus').textContent =
-        `дней: ${data.days}, записей создано: ${data.created}` + (data.skipped ? `, уже было: ${data.skipped}` : '');
+        `Дней: ${data.days}, новых записей: ${data.created}` + (data.skipped ? `, уже были: ${data.skipped}` : '');
       $('textImportInput').value = '';
-      loadEntries();
-      loadStats();
+      loadEntries(); loadStats(); loadWeek();
     } finally {
       $('textImportSubmit').disabled = false;
     }
@@ -1173,15 +1491,6 @@
 
   // --- Отчёты ---
   let currentReport = null;
-
-  // Открыть панель: подставить текущий месяц и подтянуть историю отчётов.
-  $('reportBtn').onclick = () => {
-    $('reportPanel').classList.remove('hidden');
-    if (!$('reportFrom').value) setPeriod('month');
-    loadReportHistory();
-    $('reportPanel').scrollIntoView({ behavior: 'smooth' });
-  };
-  $('reportClose').onclick = () => $('reportPanel').classList.add('hidden');
 
   /** Быстрый выбор периода: эта неделя / этот месяц / прошлый месяц. */
   function setPeriod(kind) {
@@ -1200,11 +1509,15 @@
     }
     $('reportFrom').value = ymd(from);
     $('reportTo').value = ymd(to);
+    document.querySelectorAll('.period-btn').forEach(b => b.classList.toggle('on', b.dataset.period === kind));
   }
 
   document.querySelectorAll('.period-btn').forEach(b => {
     b.onclick = () => setPeriod(b.dataset.period);
   });
+  ['reportFrom', 'reportTo'].forEach(id => $(id).addEventListener('change', () => {
+    document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('on'));
+  }));
 
   function showReport(report) {
     currentReport = report;
@@ -1225,16 +1538,28 @@
     $('reportRevoke').classList.toggle('hidden', !token);
     $('reportShare').classList.toggle('hidden', !!token);
     $('reportLink').innerHTML = token
-      ? 'Ссылка для работодателя: <a class="link" href="/r/' + token + '" target="_blank">'
-        + location.origin + '/r/' + token + '</a>'
+      ? 'Ссылка для работодателя: <a href="/r/' + token + '" target="_blank">' + location.origin + '/r/' + token + '</a>'
       : '';
   }
+
+  // Пока ИИ пишет отчёт (секунды, иногда десятки секунд), показываем, что происходит,
+  // а не просто крутим колёсико — иначе кажется, что всё зависло.
+  const GEN_STEPS = ['Читаю записи за период…', 'Группирую работу по темам…', 'Выделяю решения и проблемы…', 'Считаю цифры периода…', 'Дописываю текст…'];
+  let genTimer = null;
+  function startGenProgress() {
+    let i = 0;
+    $('genStep').textContent = GEN_STEPS[0];
+    $('genProgress').classList.remove('hidden');
+    genTimer = setInterval(() => { i = Math.min(i + 1, GEN_STEPS.length - 1); $('genStep').textContent = GEN_STEPS[i]; }, 2500);
+  }
+  function stopGenProgress() { clearInterval(genTimer); $('genProgress').classList.add('hidden'); }
 
   $('reportBuild').onclick = async () => {
     const from = $('reportFrom').value, to = $('reportTo').value;
     if (!from || !to) { $('reportStatus').textContent = 'Выберите период'; return; }
     $('reportBuild').disabled = true;
-    $('reportStatus').textContent = serverConfig.aiEnabled ? 'Собираем, ИИ причёсывает текст…' : 'Собираем…';
+    $('reportStatus').textContent = '';
+    if (serverConfig.aiEnabled) startGenProgress();
     try {
       const res = await api('/api/reports', {
         method: 'POST',
@@ -1242,10 +1567,10 @@
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) { $('reportStatus').textContent = data.error || 'Не вышло (' + res.status + ')'; return; }
-      $('reportStatus').textContent = '';
       showReport(data);
       loadReportHistory();
     } finally {
+      stopGenProgress();
       $('reportBuild').disabled = false;
     }
   };
@@ -1266,14 +1591,12 @@
   $('reportSave').onclick = async () => {
     $('reportSave').disabled = true;
     try {
-      const res = await api('/api/reports/' + currentReport.id, {
-        method: 'PUT',
-        body: { contentMd: $('reportEditor').value },
-      });
+      const res = await api('/api/reports/' + currentReport.id, { method: 'PUT', body: { contentMd: $('reportEditor').value } });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) { alert(data.error || 'Не удалось сохранить'); return; }
+      if (!res.ok) { toast(data.error || 'Не удалось сохранить'); return; }
       showReport(data);
       loadReportHistory();
+      toast('Отчёт сохранён');
     } finally {
       $('reportSave').disabled = false;
     }
@@ -1287,6 +1610,8 @@
     currentReport.shareToken = (await res.json()).shareToken;
     renderShareState();
     loadReportHistory();
+    const url = location.origin + '/r/' + currentReport.shareToken;
+    try { await navigator.clipboard.writeText(url); toast('Ссылка скопирована'); } catch (e) { /* ссылка видна под отчётом */ }
   };
 
   $('reportRevoke').onclick = async () => {
@@ -1308,17 +1633,18 @@
     a.click();
   };
 
-  // PDF делаем печатью браузера: кириллица гарантированно на месте, и не нужно
-  // тащить на сервер шрифт ради генерации PDF.
+  // PDF: если у отчёта есть публичная ссылка — открываем её (там вёрстка для печати и кнопка PDF).
+  // Иначе печатаем прямо отсюда: кириллица гарантированно на месте, шрифт на сервер не нужен.
   $('reportPrint').onclick = () => {
     if (!currentReport) return;
+    if (currentReport.shareToken) { window.open('/r/' + currentReport.shareToken + '?print=1', '_blank'); return; }
     const w = window.open('', '_blank');
-    if (!w) { alert('Браузер заблокировал новое окно — разрешите всплывающие окна'); return; }
+    if (!w) { toast('Браузер заблокировал новое окно — разрешите всплывающие окна'); return; }
     w.document.write('<!doctype html><html lang="ru"><head><meta charset="utf-8"><title>'
       + esc(currentReport.title) + '</title><style>'
       + 'body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;max-width:760px;'
       + 'margin:0 auto;padding:32px 18px;color:#1c2330;line-height:1.6}'
-      + 'h1{font-size:24px}h2{font-size:18px;margin-top:24px}h3{font-size:15px}ul{padding-left:20px}'
+      + 'h1{font-size:24px}h2{font-size:18px;margin-top:24px;color:#3b6ef5}h3{font-size:15px}ul{padding-left:20px}'
       + 'table{border-collapse:collapse;width:100%;margin:12px 0;font-size:13px}'
       + 'th,td{border:1px solid #ccd2dc;padding:6px 10px;text-align:left}th{background:#f2f4f8}'
       + '</style></head><body>' + currentReport.contentHtml
@@ -1335,29 +1661,33 @@
     try {
       const res = await api('/api/reports/' + currentReport.id + '/export-github', { method: 'POST' });
       const data = await res.json().catch(() => ({}));
-      status.textContent = res.ok
-        ? `Готово: ${data.repo}/${data.path}`
-        : (data.error || 'Не вышло (' + res.status + ')');
+      status.textContent = res.ok ? `Готово: ${data.repo}/${data.path}` : (data.error || 'Не вышло (' + res.status + ')');
     } finally {
       $('reportExportGithub').disabled = false;
     }
   };
 
   // --- История собранных отчётов ---
+  function humanDate(iso) {
+    const d = parseYmd(iso.slice(0, 10));
+    return d.getDate() + ' ' + MONTHS_GEN[d.getMonth()] + ' ' + d.getFullYear();
+  }
+
   async function loadReportHistory() {
     const res = await api('/api/reports');
     if (!res.ok) return;
     const reports = await res.json();
     const box = $('reportHistory');
     if (!reports.length) {
-      box.innerHTML = '<div class="muted" style="font-size:13px;">Пока ни одного. Соберите первый.</div>';
+      box.innerHTML = '<div class="status">Пока ни одного. Соберите первый.</div>';
       return;
     }
     box.innerHTML = reports.map(r => `<div class="rep-row" data-id="${r.id}">
-      <span>${esc(r.title)}${r.shareToken ? ' <span class="tag">со ссылкой</span>' : ''}</span>
-      <span style="display:flex; gap:8px;">
-        <button class="ghost rep-open">Открыть</button>
-        <button class="ghost rep-del">Удалить</button>
+      <span class="t">${esc(r.title)}${r.shareToken ? '<span class="pill-ok">ссылка открыта</span>' : ''}
+        <small>${humanDate(r.periodStart)} — ${humanDate(r.periodEnd)}</small></span>
+      <span style="display:flex; gap:6px;">
+        <button class="btn ghost sm rep-open">Открыть</button>
+        <button class="btn ghost sm rep-del ro-hide">Удалить</button>
       </span>
     </div>`).join('');
     const byId = Object.fromEntries(reports.map(r => [r.id, r]));
@@ -1365,7 +1695,7 @@
       const id = row.dataset.id;
       row.querySelector('.rep-open').onclick = () => {
         showReport(byId[id]);
-        $('reportResult').scrollIntoView({ behavior: 'smooth' });
+        $('reportResult').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       };
       row.querySelector('.rep-del').onclick = async () => {
         if (!confirm('Удалить отчёт? Записи останутся на месте.')) return;
@@ -1382,6 +1712,7 @@
   // --- Старт: если есть токен — проверим его через /api/me ---
   (async function init() {
     setMode('login');
+    checkDemo();
     if (!getToken()) return;
     const res = await api('/api/me');
     if (res.ok) showApp(await res.json());

@@ -50,7 +50,13 @@ data class UserDto(
      * приватных репозиториев (см. GitlabImport.kt), поэтому логина здесь нет.
      */
     val gitlabTokenBound: Boolean = false,
+    /** Вход через демо-кнопку: только просмотр, любые изменения сервер отклонит (403). */
+    val readOnly: Boolean = false,
 )
+
+/** Ответ GET /api/auth/demo: включён ли на сервере демо-вход (кнопка на экране входа). */
+@Serializable
+data class DemoAvailabilityDto(val enabled: Boolean)
 
 /** Тело POST /api/me/github-token: привязать (или заменить) личный токен GitHub. */
 @Serializable

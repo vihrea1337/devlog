@@ -75,7 +75,9 @@ fun Route.authRoutes() {
             if (user == null) {
                 call.respond(HttpStatusCode.Unauthorized, ErrorResponse("Пользователь не найден"))
             } else {
-                call.respond(user.toDto())
+                // readOnly — из токена: демо-вход видит те же данные, но только на просмотр.
+                val readOnly = call.principal<JWTPrincipal>()?.payload?.getClaim("readOnly")?.asBoolean() == true
+                call.respond(user.toDto().copy(readOnly = readOnly))
             }
         }
 
@@ -136,7 +138,7 @@ fun Route.authRoutes() {
     }
 }
 
-private fun UserRow.toDto() = UserDto(
+internal fun UserRow.toDto() = UserDto(
     id = id.toString(),
     email = email,
     displayName = displayName,

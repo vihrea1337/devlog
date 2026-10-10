@@ -88,6 +88,9 @@ fun Application.module() {
         }
     }
 
+    // Демо-вход «только для чтения»: изменения с таким токеном отклоняются (см. DemoAccess.kt).
+    install(ReadOnlyGuard)
+
     routing {
         // Проверка живости сервера — открытая ручка для мониторинга и деплоя.
         get("/health") {
@@ -95,6 +98,8 @@ fun Application.module() {
         }
         // Регистрация/вход (открыты) и /api/me (под токеном).
         authRoutes()
+        // Демо-вход одной кнопкой (если включён переменной DEMO_LOGIN_EMAIL).
+        demoRoutes()
         // CRUD проектов (все под токеном).
         projectRoutes()
         // CRUD записей (все под токеном).

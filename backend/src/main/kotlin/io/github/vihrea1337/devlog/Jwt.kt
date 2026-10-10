@@ -50,11 +50,23 @@ object JwtService {
         UUID.fromString(verifier.verify(token).getClaim("userId").asString())
     }.getOrNull()
 
-    fun makeToken(userId: UUID, email: String): String = JWT.create()
+    /**
+     * [readOnly] — токен демо-входа (см. DemoAccess): им можно смотреть, но не менять.
+     * Живёт 12 часов вместо обычного срока — на один показ, не навсегда.
+     */
+    fun makeToken(userId: UUID, email: String, readOnly: Boolean = false): String = JWT.create()
         .withIssuer(ISSUER)
         .withAudience(AUDIENCE)
         .withClaim("userId", userId.toString())
         .withClaim("email", email)
-        .withExpiresAt(Date(System.currentTimeMillis() + VALIDITY_MS))
+        .apply { if (readOnly) withClaim("readOnly", true) }
+        .withExpiresAt(Date(System.currentTimeMillis() + if (readOnly) DEMO_VALIDITY_MS else VALIDITY_MS))
         .sign(algorithm)
+
+    /** Токен «только для чтения»? Подпись проверяется; битый токен — не наш случай (false). */
+    fun isReadOnly(token: String): Boolean = runCatching {
+        verifier.verify(token).getClaim("readOnly").asBoolean() == true
+    }.getOrDefault(false)
+
+    private const val DEMO_VALIDITY_MS = 12L * 60 * 60 * 1000
 }
