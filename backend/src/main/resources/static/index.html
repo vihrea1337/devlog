@@ -135,6 +135,7 @@
 
   /* Сводка за 7 дней */
   .week-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .wk-empty { margin: 0; color: var(--muted); line-height: 1.45; }
   .stat { background: var(--card-2); border-radius: 10px; padding: 10px 12px; }
   .stat b { display: block; font-size: 22px; line-height: 1.2; font-variant-numeric: tabular-nums; }
   .stat span { font-size: 12px; color: var(--muted); }
@@ -447,6 +448,7 @@
           <div class="stat"><b id="wkEntries">—</b><span id="wkEntriesLabel">записей</span></div>
         </div>
         <div class="bars" id="wkBars"></div>
+        <p class="wk-empty hidden" id="wkEmpty"></p>
       </div>
 
       <div class="card" id="statsCard">
@@ -1041,6 +1043,23 @@
     const res = await api(`/api/entries?from=${ymd(from)}&to=${ymd(to)}`);
     if (!res.ok) return;
     const list = await res.json();
+    // Пустая неделя: вместо ряда нулей и плоских столбиков — одна понятная фраза
+    // (как в Android). Дату последней записи берём из годовой статистики активности.
+    const empty = list.length === 0;
+    document.querySelector('#weekCard .week-stats').classList.toggle('hidden', empty);
+    $('wkBars').classList.toggle('hidden', empty);
+    $('wkEmpty').classList.toggle('hidden', !empty);
+    if (empty) {
+      const stats = await api('/api/stats/activity');
+      const last = stats.ok ? Object.keys((await stats.json()).days).sort().pop() : null;
+      if (!last) {
+        $('wkEmpty').textContent = 'Записей пока нет. Пара строк в день — и здесь появится картина недели.';
+      } else {
+        const ago = Math.round((parseYmd(ymd(new Date())) - parseYmd(last)) / 86400000);
+        $('wkEmpty').textContent = `За неделю записей не было. Последняя — ${ago} ${plural(ago, 'день', 'дня', 'дней')} назад.`;
+      }
+      return;
+    }
     const days = {}, minutes = {};
     for (const e of list) {
       days[e.occurredOn] = (days[e.occurredOn] || 0) + 1;
