@@ -5,6 +5,8 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.mutableStateOf
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import dagger.hilt.android.AndroidEntryPoint
@@ -34,11 +36,16 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             DevLogTheme {
-                DevLogNavHost(
-                    session = session,
-                    openNewEntry = openNewEntry.value,
-                    onNewEntryShown = { openNewEntry.value = false },
-                )
+                // Surface задаёт фон и цвет текста по умолчанию из темы. Без него текст без
+                // явного цвета рисовался чёрным — в тёмной теме заголовок на экране входа
+                // был невидим (найдено на телефоне).
+                Surface(color = MaterialTheme.colorScheme.background) {
+                    DevLogNavHost(
+                        session = session,
+                        openNewEntry = openNewEntry.value,
+                        onNewEntryShown = { openNewEntry.value = false },
+                    )
+                }
             }
         }
     }

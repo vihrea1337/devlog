@@ -37,7 +37,7 @@ fun Route.reportRoutes() {
             if (projectId != null && ProjectRepository.getById(call.userId(), projectId) == null) {
                 return@post call.badRequest("Проект не найден")
             }
-            val title = body.title?.trim()?.ifBlank { null }?.take(200) ?: "Отчёт за $from — $to"
+            val title = body.title?.trim()?.ifBlank { null }?.take(200) ?: ReportGenerator.defaultTitle(from, to)
             val md = ReportGenerator.generate(call.userId(), title, from, to, projectId)
             call.respond(ReportRepository.create(call.userId(), projectId, title, from, to, body.format, md))
         }

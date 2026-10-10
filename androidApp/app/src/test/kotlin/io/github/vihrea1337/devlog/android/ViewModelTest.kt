@@ -7,6 +7,7 @@ import io.github.vihrea1337.devlog.android.data.AuthRepository
 import io.github.vihrea1337.devlog.android.data.ProjectsRepository
 import io.github.vihrea1337.devlog.android.data.ReportsRepository
 import io.github.vihrea1337.devlog.android.reminder.delayUntilHour
+import io.github.vihrea1337.devlog.android.ui.common.plural
 import io.github.vihrea1337.devlog.android.ui.login.LoginViewModel
 import io.github.vihrea1337.devlog.android.ui.reports.PeriodPreset
 import io.github.vihrea1337.devlog.android.ui.reports.ReportsViewModel
@@ -170,5 +171,11 @@ class ViewModelTest {
 
         assertEquals(Duration.ofHours(11), delayUntilHour(20, morning))
         assertEquals(Duration.ofMinutes(22 * 60 + 30), delayUntilHour(20, night))
+    }
+
+    @Test
+    fun `склонение после числа`() {
+        val days = { n: Int -> plural(n, "день", "дня", "дней") }
+        assertEquals(listOf("день", "дня", "дней", "дней", "день", "дней"), listOf(1, 3, 5, 11, 21, 112).map(days))
     }
 }

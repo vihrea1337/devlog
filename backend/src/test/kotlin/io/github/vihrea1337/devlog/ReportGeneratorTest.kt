@@ -158,4 +158,15 @@ class ReportGeneratorTest {
         assertEquals("8 ч", ReportGenerator.humanDuration(480))
         assertEquals("1 ч 30 мин", ReportGenerator.humanDuration(90))
     }
+
+    @Test
+    fun `заголовок по умолчанию — человеческими датами, а не ISO`() {
+        val d = { iso: String -> LocalDate.parse(iso) }
+        val today = d("2026-10-10")
+        assertEquals("Отчёт за сентябрь 2026", ReportGenerator.defaultTitle(d("2026-09-01"), d("2026-09-30"), today))
+        assertEquals("Отчёт за октябрь 2026", ReportGenerator.defaultTitle(d("2026-10-01"), today, today))
+        assertEquals("Отчёт за 4–10 октября 2026", ReportGenerator.defaultTitle(d("2026-10-04"), today, today))
+        assertEquals("Отчёт за 20 июля — 10 октября 2026", ReportGenerator.defaultTitle(d("2026-07-20"), today, today))
+        assertEquals("Отчёт за 20 декабря 2025 — 10 января 2026", ReportGenerator.defaultTitle(d("2025-12-20"), d("2026-01-10"), today))
+    }
 }

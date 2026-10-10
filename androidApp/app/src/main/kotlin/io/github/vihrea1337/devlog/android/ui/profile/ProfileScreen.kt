@@ -65,6 +65,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.vihrea1337.devlog.ActivityStatsDto
+import io.github.vihrea1337.devlog.android.ui.common.plural
 import io.github.vihrea1337.devlog.android.ui.feed.ProjectDot
 import java.time.DayOfWeek
 import java.time.LocalDate
@@ -163,13 +164,13 @@ private fun ActivityCard(stats: ActivityStatsDto?, isLoading: Boolean) {
                 return@Column
             }
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                StatTile("${stats.currentStreak}", "дней подряд", Modifier.weight(1f), highlight = stats.currentStreak > 0)
+                StatTile("${stats.currentStreak}", plural(stats.currentStreak, "день подряд", "дня подряд", "дней подряд"), Modifier.weight(1f), highlight = stats.currentStreak > 0)
                 StatTile("${stats.longestStreak}", "рекорд серии", Modifier.weight(1f))
-                StatTile("${stats.activeDays}", "дней с записями", Modifier.weight(1f))
+                StatTile("${stats.activeDays}", plural(stats.activeDays, "день с записями", "дня с записями", "дней с записями"), Modifier.weight(1f))
             }
             Heatmap(stats.days)
             Text(
-                "${stats.totalEntries} записей за год",
+                "${stats.totalEntries} ${plural(stats.totalEntries, "запись", "записи", "записей")} за год",
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
