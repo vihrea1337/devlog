@@ -1,0 +1,76 @@
+name: Deploy
+
+# Выкатка бэкенда на сервер. Запускается ВРУЧНУЮ: Actions → Deploy → Run workflow.
+# Автоматический деплой на каждый пуш сознательно не делаем: сервер общий с другими
+# проектами, и выкатка должна быть осознанным действием.
+#
+# Нужны секреты репозитория (Settings → Secrets and variables → Actions):
+#   DEPLOY_HOST         — адрес сервера
+#   DEPLOY_USER         — пользователь SSH
+#   DEPLOY_SSH_KEY      — ПРИВАТНЫЙ ключ отдельной пары, созданной только для деплоя
+#   DEPLOY_KNOWN_HOSTS  — строка из `ssh-keyscan <адрес>` (защита от подмены сервера)
+# Пока секретов нет — job честно пропускает выкатку и пишет, чего не хватает.
+# Порядок настройки — docs/deploy.md (раздел «Деплой из GitHub Actions»).
+on:
+  workflow_dispatch:
+
+# Две выкатки одновременно — плохая идея: вторая ждёт окончания первой.
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Собрать и выкатить бэкенд
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Есть ли секреты для деплоя
+        id: check
+        env:
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          if [ -z "$HOST" ] || [ -z "$KEY" ]; then
+            echo "::warning::Секреты DEPLOY_HOST / DEPLOY_SSH_KEY не заданы — выкатка пропущена (см. docs/deploy.md)"
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v4
+        if: steps.check.outputs.ready == 'true'
+      - name: Установить JDK 21
+        if: steps.check.outputs.ready == 'true'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+      # Перед выкаткой — полный прогон тестов: сломанное на сервер не едет.
+      - name: Тесты и дистрибутив
+        if: steps.check.outputs.ready == 'true'
+        working-directory: backend
+        run: |
+          chmod +x ./gradlew
+          ./gradlew :shared:test test distTar --no-daemon
+      - name: Настроить SSH
+        if: steps.check.outputs.ready == 'true'
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy && chmod 600 ~/.ssh/deploy
+          echo "${{ secrets.DEPLOY_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+      # Дистрибутив → /opt/devlog/backend/, пересборка только контейнера бэкенда
+      # (база и Caddy не трогаются), затем ждём /health до 2 минут.
+      - name: Выкатить
+        if: steps.check.outputs.ready == 'true'
+        env:
+          TARGET: ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}
+        run: |
+          scp -i ~/.ssh/deploy backend/build/distributions/devlog-backend-*.tar "$TARGET:/opt/devlog/backend/devlog-backend.tar"
+          ssh -i ~/.ssh/deploy "$TARGET" 'cd /opt/devlog && docker compose up -d --build devlog-backend'
+          for i in $(seq 1 40); do
+            if curl -fs https://vihreaschedule.duckdns.org:34444/health; then echo; echo "выкачено"; exit 0; fi
+            sleep 3
+          done
+          echo "::error::сервер не ответил на /health после выкатки"
+          exit 1

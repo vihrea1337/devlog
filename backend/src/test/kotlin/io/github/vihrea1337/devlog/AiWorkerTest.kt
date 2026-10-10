@@ -108,6 +108,26 @@ class AiWorkerTest {
     }
 
     @Test
+    fun `лимит Groq (429) — запись ждёт без траты попытки, воркер делает паузу`() = runBlocking {
+        val id = newEntry()
+        var limited = true
+        val ai = FakeAi {
+            if (limited) throw AiRateLimitedException(Duration.ofSeconds(30), "429") else StructuredDto(summary = "ок")
+        }
+        val worker = AiWorker(ai, maxAttempts = 1, limiter = { true })
+
+        assertFalse(worker.runOnce(), "после 429 воркер должен встать на паузу, а не брать следующую запись")
+        assertEquals("queued", statusOf(id), "запись не должна стать failed из-за лимита — с ней всё в порядке")
+        assertEquals(0, attemptsOf(id), "429 — не попытка: даже при maxAttempts = 1 запись должна дождаться своей очереди")
+        assertTrue(EntryRepository.getById(userId, id)!!.aiError!!.contains("лимит"))
+
+        // Пауза ещё идёт — даже если лимит уже отпустил, воркер в Groq не ходит.
+        limited = false
+        assertFalse(worker.runOnce())
+        assertEquals(1, ai.calls, "во время паузы обращений к ИИ быть не должно")
+    }
+
+    @Test
     fun `после исчерпания попыток запись помечается failed с причиной`() = runBlocking {
         val id = newEntry()
         val worker = AiWorker(FakeAi { error("модель вернула мусор") }, maxAttempts = 2, limiter = { true })

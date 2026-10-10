@@ -3,6 +3,8 @@
 
     <!-- Приложение ходит в интернет (к нашему бэкенду) — нужно это разрешение. -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Узнавать о появлении сети: офлайн-записи синхронизируются сами (FeedScreen). -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <application
         android:allowBackup="true"

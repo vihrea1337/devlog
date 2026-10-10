@@ -174,7 +174,8 @@ private fun renderReportPage(report: ReportDto): String = """
 <style>
   body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;max-width:760px;margin:0 auto;padding:32px 18px;color:#1c2330;line-height:1.6;background:#fff}
   h1{font-size:24px} h2{font-size:18px;margin-top:24px;border-top:1px solid #eee;padding-top:14px}
-  h3{font-size:15px} ul{padding-left:20px} .foot{margin-top:40px;color:#8a92a1;font-size:12px}
+  h3{font-size:15px} ul,ol{padding-left:20px} li{margin:4px 0} .foot{margin-top:40px;color:#8a92a1;font-size:12px}
+  code{font-family:ui-monospace,Consolas,monospace;font-size:13px;background:#f1f3f6;padding:1px 5px;border-radius:4px}
   table{border-collapse:collapse;width:100%;margin:12px 0;font-size:14px;display:block;overflow-x:auto}
   th,td{border:1px solid #e3e6ec;padding:6px 10px;text-align:left}
   th{background:#f5f6f8;font-weight:600}

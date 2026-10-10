@@ -74,6 +74,12 @@ fun LoginScreen(onLoggedIn: () -> Unit) {
             label = { Text("Пароль") },
             singleLine = true,
             visualTransformation = PasswordVisualTransformation(),
+            // Подсказка правила ДО отправки — чтобы не узнавать о нём из ошибки.
+            supportingText = if (isRegister) {
+                { Text("Не короче 6 символов") }
+            } else {
+                null
+            },
             modifier = Modifier.fillMaxWidth(),
         )
         Spacer(Modifier.height(12.dp))
@@ -94,7 +100,10 @@ fun LoginScreen(onLoggedIn: () -> Unit) {
                         TokenStore.save(resp.token, resp.user.displayName)
                         onLoggedIn()
                     } catch (e: Exception) {
-                        error = if (isRegister) "Не удалось зарегистрироваться" else "Неверный email или пароль"
+                        // Настоящая причина: сервер присылает её в теле ответа («Нужен email
+                        // и пароль от 6 символов», «Пользователь с таким email уже есть»),
+                        // а сетевые сбои отличаем от неверного пароля («Нет связи с сервером»).
+                        error = e.humanMessage()
                     }
                     busy = false
                 }

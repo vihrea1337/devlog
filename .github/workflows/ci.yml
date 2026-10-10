@@ -1,12 +1,21 @@
 name: CI
 
-# Запускаем проверки на каждый пуш в main и на каждый pull request.
-# Тесты бэкенда идут на встроенной базе H2 — реальный Postgres/Docker в CI не нужен.
+# Проверки на каждый пуш в main и на каждый pull request.
+# Репозиторий публичный — минуты GitHub Actions для него бесплатны, поэтому гоняем всё:
+#   1) тесты бэкенда и общего модуля shared (на встроенной базе H2) + сборка дистрибутива;
+#   2) смоук-тест НАСТОЯЩЕГО Docker-образа на настоящем Postgres — ровно как на сервере;
+#   3) сборка Android-приложения.
 on:
   push:
     branches: [ main ]
   pull_request:
     branches: [ main ]
+  workflow_dispatch: # кнопка «Run workflow» во вкладке Actions — прогнать вручную
+
+# Новый пуш в ту же ветку отменяет ещё идущую проверку старого — не жжём минуты впустую.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   backend-tests:
@@ -20,11 +29,97 @@ jobs:
           distribution: temurin
           java-version: '21'
           cache: gradle
-      - name: Прогнать тесты и собрать дистрибутив
+      - name: Прогнать тесты (бэкенд + shared) и собрать дистрибутив
         working-directory: backend
         run: |
           chmod +x ./gradlew
           ./gradlew :shared:test test distTar --no-daemon
+      # Упали тесты — выкладываем HTML-отчёт Gradle: в нём видно, какой тест и почему.
+      - name: Отчёт о тестах (если упали)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: |
+            backend/build/reports/tests/
+            shared/build/reports/tests/
+          retention-days: 7
+      # Дистрибутив передаём следующему job — смоук-тест соберёт из него Docker-образ.
+      - name: Сохранить дистрибутив
+        uses: actions/upload-artifact@v4
+        with:
+          name: devlog-backend-dist
+          path: backend/build/distributions/devlog-backend-*.tar
+          retention-days: 7
+
+  docker-smoke:
+    name: Docker-образ — смоук-тест на Postgres
+    needs: backend-tests
+    runs-on: ubuntu-latest
+    # Настоящий Postgres 16 рядом с job — как контейнер devlog-pg на сервере.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: devlog
+          POSTGRES_PASSWORD: ci-password
+        ports: [ "5432:5432" ]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: devlog-backend-dist
+          path: dist
+      # Собираем образ ТЕМ ЖЕ Dockerfile, что и на сервере (deploy/server/backend/Dockerfile).
+      - name: Собрать образ бэкенда
+        run: |
+          cp dist/devlog-backend-*.tar deploy/server/backend/devlog-backend.tar
+          docker build -t devlog-backend:ci deploy/server/backend
+      - name: Запустить контейнер
+        run: |
+          docker run -d --name devlog --network host \
+            -e HOST=127.0.0.1 -e PORT=8080 \
+            -e DB_URL=jdbc:postgresql://127.0.0.1:5432/devlog -e DB_USER=postgres -e DB_PASSWORD=ci-password \
+            -e JWT_SECRET=ci-secret-$(openssl rand -hex 16) \
+            devlog-backend:ci
+      # Ждём /health до 60 с. Не поднялся — печатаем лог контейнера, чтобы было видно почему.
+      - name: Дождаться /health
+        run: |
+          for i in $(seq 1 30); do
+            if curl -fs http://127.0.0.1:8080/health; then echo; exit 0; fi
+            sleep 2
+          done
+          docker logs devlog; exit 1
+      # Главная проверка: применились ВСЕ миграции из репозитория. Однажды сборка теряла
+      # плагины Flyway и он молча пропускал миграции — сервер «работал» на пустой схеме.
+      - name: Все миграции Flyway применены
+        run: |
+          expected=$(ls backend/src/main/resources/db/migration/V*__*.sql | wc -l)
+          applied=$(docker run --rm --network host -e PGPASSWORD=ci-password postgres:16 \
+            psql -h 127.0.0.1 -U postgres devlog -tAc "select count(*) from flyway_schema_history where success")
+          echo "миграций в репозитории: $expected, применено: $applied"
+          test "$expected" = "$applied"
+      # Сквозной сценарий через HTTP: регистрация → запись → отчёт → публичная ссылка.
+      - name: Сквозной сценарий API
+        run: |
+          set -e
+          B=http://127.0.0.1:8080
+          TOKEN=$(curl -fs -X POST $B/api/auth/register -H 'Content-Type: application/json' \
+            -d '{"email":"ci@example.com","password":"ci-password","displayName":"CI"}' | jq -r .token)
+          curl -fs -X POST $B/api/entries -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+            -d '{"occurredOn":"2026-08-12","rawText":"CI: проверка сквозного сценария"}' > /dev/null
+          REPORT=$(curl -fs -X POST $B/api/reports -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+            -d '{"periodStart":"2026-08-01","periodEnd":"2026-08-31"}')
+          echo "$REPORT" | jq -e '.contentMd | contains("Хронология")' > /dev/null
+          ID=$(echo "$REPORT" | jq -r .id)
+          URL=$(curl -fs -X POST $B/api/reports/$ID/share -H "Authorization: Bearer $TOKEN" | jq -r .url)
+          curl -fs $B$URL | grep -q "проверка сквозного сценария"
+          echo "регистрация, запись, отчёт и публичная ссылка работают"
+      - name: Лог контейнера
+        if: always()
+        run: docker logs devlog 2>&1 | tail -50
 
   android-build:
     name: Android — сборка debug
@@ -37,10 +132,18 @@ jobs:
           distribution: temurin
           java-version: '21'
           cache: gradle
-      - name: Установить Android SDK
-        uses: android-actions/setup-android@v3
+      # Android SDK на раннерах GitHub уже установлен — только принимаем лицензии.
+      # (Экшен android-actions/setup-android ломается на устаревшем пакете "tools".)
+      - name: Принять лицензии Android SDK
+        run: yes | sdkmanager --licenses > /dev/null || true
       - name: Собрать приложение (debug)
         working-directory: androidApp
         run: |
           chmod +x ./gradlew
           ./gradlew :app:assembleDebug --no-daemon
+      - name: Сохранить APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: devlog-apk
+          path: androidApp/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 7

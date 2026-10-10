@@ -62,6 +62,34 @@ class MarkdownTest {
     }
 
     @Test
+    fun `код в обратных кавычках не ломается на подчёркиваниях`() {
+        val html = Markdown.toHtml("- заменил `updated_at` на `sync_seq` из _PostgreSQL_")
+        assertTrue(html.contains("<code>updated_at</code>"), html)
+        assertTrue(html.contains("<code>sync_seq</code>"), html)
+        assertTrue(html.contains("<em>PostgreSQL</em>"), html)
+        assertFalse(html.contains("`"), html)
+    }
+
+    @Test
+    fun `подчёркивания внутри слов — не курсив`() {
+        val html = Markdown.toHtml("поле sync_seq и updated_at")
+        assertFalse(html.contains("<em>"), html)
+    }
+
+    @Test
+    fun `код не трогает звёздочки и непарная кавычка остаётся текстом`() {
+        assertTrue(Markdown.toHtml("`**не жирный**`").contains("<code>**не жирный**</code>"))
+        assertTrue(Markdown.toHtml("цена `5").contains("цена `5"))
+    }
+
+    @Test
+    fun `нумерованный список`() {
+        val html = Markdown.toHtml("1. первый\n2. второй\n\n- маркер")
+        assertTrue(html.contains("<ol>\n<li>первый</li>\n<li>второй</li>\n</ol>"), html)
+        assertTrue(html.contains("<ul>\n<li>маркер</li>\n</ul>"), html)
+    }
+
+    @Test
     fun `html из текста экранируется`() {
         val html = Markdown.toHtml("Правил <script>alert(1)</script> в шаблоне")
         assertFalse(html.contains("<script>"), html)

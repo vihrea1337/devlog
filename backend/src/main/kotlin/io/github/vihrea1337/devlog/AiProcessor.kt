@@ -14,11 +14,13 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import io.ktor.serialization.kotlinx.json.json
+import kotlinx.coroutines.delay
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 import java.io.File
+import java.time.Duration
 import java.util.Properties
 import java.util.UUID
 
@@ -29,10 +31,14 @@ private data class GroqRequest(
     val messages: List<GroqMessage>,
     val temperature: Double = 0.2,
     @SerialName("response_format") val responseFormat: ResponseFormat? = null,
+    // Модели gpt-oss "думают" перед ответом, и эти скрытые рассуждения тоже тратят лимит
+    // токенов в минуту. "low" — для простых задач (разбор одной заметки), "medium" — для отчёта.
+    @SerialName("reasoning_effort") val reasoningEffort: String? = null,
+    @SerialName("max_completion_tokens") val maxCompletionTokens: Int? = null,
 )
 
 @Serializable
-private data class GroqMessage(val role: String, val content: String)
+private data class GroqMessage(val role: String, val content: String? = null)
 
 @Serializable
 private data class ResponseFormat(val type: String)
@@ -41,7 +47,11 @@ private data class ResponseFormat(val type: String)
 private data class GroqResponse(val choices: List<GroqChoice> = emptyList())
 
 @Serializable
-private data class GroqChoice(val message: GroqMessage)
+private data class GroqChoice(
+    val message: GroqMessage,
+    // Почему модель остановилась: "stop" — дописала, "length" — упёрлась в max_completion_tokens.
+    @SerialName("finish_reason") val finishReason: String? = null,
+)
 
 /**
  * Обращения к ИИ (Groq): структурирование записи и причёсывание отчёта.
@@ -62,6 +72,13 @@ object AiProcessor : AiStructurer {
     private val model: String =
         System.getenv("GROQ_MODEL")?.trim()?.ifEmpty { null } ?: readSecret("groq.model") ?: "openai/gpt-oss-20b"
 
+    // Модель для отчётов — отдельная и покрупнее: отчёт пишется редко (раз в неделю/месяц),
+    // а качество текста здесь важнее всего. Плюс у каждой модели Groq свой поминутный лимит,
+    // так что сборка отчёта не конкурирует с фоновым разбором записей.
+    private val reportModel: String =
+        System.getenv("GROQ_REPORT_MODEL")?.trim()?.ifEmpty { null } ?: readSecret("groq.report.model")
+            ?: "openai/gpt-oss-120b"
+
     // Тесты/CI принудительно выключают ИИ флагом -Ddevlog.ai.disabled=true, чтобы прогон был
     // детерминированным и не ходил в Groq по сети (иначе фоновая обработка мешает тестам).
     private val forceDisabled: Boolean = System.getProperty("devlog.ai.disabled") == "true"
@@ -72,17 +89,23 @@ object AiProcessor : AiStructurer {
     private val parseJson = Json { ignoreUnknownKeys = true }
     private val client = HttpClient(CIO) {
         install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) }
-        install(HttpTimeout) { requestTimeoutMillis = 30_000 }
+        install(HttpTimeout) { requestTimeoutMillis = 90_000 } // отчёт на крупной модели может думать долго
     }
 
     private val systemPrompt = """
-        Ты помощник, который превращает сырую заметку разработчика о проделанной за день
-        работе в структуру. Верни СТРОГО JSON-объект (без markdown и пояснений) с полями:
-        "summary" (строка, суть одной фразой), "steps" (массив строк — что сделано),
-        "decisions" (массив строк — принятые решения и почему),
-        "problems" (массив строк — проблемы и как решены), "outcome" (строка — итог),
-        "tags" (массив строк — короткие теги: технологии, темы).
-        Пиши по-русски и кратко. Чего нет — пустой массив или пустая строка.
+        Ты помогаешь разработчику вести рабочий дневник. На входе — его сырая заметка за день:
+        как попало, с сокращениями и опечатками. Разбери её в структуру и верни СТРОГО
+        JSON-объект (без markdown и пояснений) с полями:
+        "summary" — суть дня одной фразой (до 15 слов), что сделано по существу;
+        "steps" — массив: что сделано. Каждый пункт — законченное действие с конкретикой
+          (технологии, названия, числа из заметки). Объединяй мелочи, не дроби;
+        "decisions" — массив: принятые решения В ФОРМЕ «что выбрал — почему» (если причина есть в заметке);
+        "problems" — массив: проблемы В ФОРМЕ «что сломалось → в чём была причина → как решил»;
+        "outcome" — итог дня одной-двумя фразами: что теперь работает / что это дало;
+        "tags" — 3–6 коротких тегов в нижнем регистре: технологии и темы.
+        Правила: пиши по-русски (термины и названия — как в заметке), от первого лица
+        («перевёл», «починил»), без канцелярита. Ничего не выдумывай: чего нет в заметке —
+        пустой массив или пустая строка. Решения и проблемы не дублируй в steps.
     """.trimIndent()
 
     init {
@@ -111,9 +134,11 @@ object AiProcessor : AiStructurer {
                         GroqMessage("user", rawText),
                     ),
                     responseFormat = ResponseFormat("json_object"),
+                    reasoningEffort = "low",
                 ),
             )
         }
+        if (response.status.value == 429) throw rateLimited(response.headers["retry-after"], response.bodyAsText())
         if (!response.status.isSuccess()) {
             // Например: кончилась квота Groq, неверный ключ, слишком длинный текст.
             error("Groq ответил ${response.status.value}: ${response.bodyAsText().take(200)}")
@@ -136,37 +161,158 @@ object AiProcessor : AiStructurer {
         return runCatching { parseJson.decodeFromString<StructuredDto>(jsonText) }.getOrNull()
     }
 
+    /**
+     * Промпт отчёта. Главное отличие от прежнего «перепиши черновик»: раньше ИИ получал
+     * список шагов ПО ДНЯМ с требованием «сохрани все факты и даты» — и честно возвращал тот же
+     * список по дням, только с заголовками. Работодателю так читать тяжело: он хочет понять,
+     * ЧТО получилось, какие решения принимались и какие проблемы снимались, а не дневник.
+     * Теперь ИИ получает полную структуру записей (с решениями и проблемами) и пишет
+     * аналитический текст ПО ТЕМАМ. Цифры периода и хронологию дописывает код (ReportGenerator),
+     * чтобы модель не придумывала числа.
+     */
     private val reportPrompt = """
-        Ты редактор. Ниже — черновик отчёта разработчика о проделанной за период работе.
-        Перепиши его в связный, аккуратный отчёт для работодателя на русском в формате Markdown:
-        сохрани ВСЕ факты и даты, добавь короткое вступление и итоговый абзац, используй
-        заголовки и списки. Ответь ТОЛЬКО Markdown, без пояснений вокруг.
+        Ты — опытный тимлид и редактор. По рабочим записям разработчика за период напиши
+        отчёт для работодателя/руководителя. Читатель — технически грамотный, но занятой
+        человек: за минуту он должен понять, что получилось, и при желании — как и почему.
+
+        Верни ТОЛЬКО Markdown (без пояснений вокруг) строго с такими разделами:
+
+        ## Кратко
+        2–4 предложения связным текстом: на чём был фокус периода и главный результат.
+        Без списков.
+
+        ## Главные результаты
+        3–7 пунктов. СГРУППИРУЙ работу ПО ТЕМАМ (направлениям), объединяя записи разных дней
+        об одном и том же. Каждый пункт: **результат жирным** — затем 1–2 предложения: что
+        конкретно сделано и что это даёт (пользователю, команде, надёжности).
+
+        ## Ключевые решения
+        3–7 САМЫХ ВАЖНЫХ решений (архитектура, надёжность, безопасность — а не мелочи).
+        Пункты вида: **решение** — почему так (альтернатива, если была в записях).
+
+        ## Сложные проблемы
+        Пункты вида: **проблема** — причина → как решено. Только нетривиальные и РЕШЁННЫЕ;
+        нерешённое и отложенное — только в «Что дальше».
+
+        ## Что дальше
+        Только если в записях есть недоделки, найденные недочёты или планы. Иначе раздел не пиши.
+
+        Правила:
+        - НЕ пересказывай по дням и не начинай пункты с дат — хронологию добавят отдельно.
+        - Никаких оценок и обещаний, которых нет в записях: «надёжный», «безопасный»,
+          «готово к масштабированию», «стабильно работает». Эффект пиши, только если он
+          прямо следует из записи; если не следует — просто опиши, что сделано.
+        - Точно передавай причины и следствия: если баг «терял» записи — не пиши
+          «дублировал»; если импорт берёт коммиты — не называй его «восстановлением данных».
+        - Ничего не выдумывай: только факты из записей. Сохраняй конкретику — названия
+          технологий, числа, имена файлов и сервисов.
+        - Не повторяй один и тот же факт в разных разделах.
+        - Пиши по-русски, от первого лица («перевёл», «нашёл и починил»), живо и по делу,
+          без канцелярита («было осуществлено», «произведена работа по»).
+        - Заголовок отчёта и период не пиши — они уже есть.
     """.trimIndent()
 
-    /** Причесать черновик отчёта через ИИ. null → используем черновик как есть. */
-    suspend fun polishReport(userId: UUID, baselineMarkdown: String): String? {
+    /**
+     * Написать аналитическую часть отчёта по подготовленным данным [entriesDigest]
+     * (см. ReportGenerator.digest). null → ИИ недоступен, ReportGenerator соберёт текст сам.
+     *
+     * Сначала — модель для отчётов (покрупнее); если она недоступна (лимит, ошибка) —
+     * пробуем основную. На 429 с коротким ожиданием (до 20 с) подождём и повторим один раз:
+     * пользователь ждёт ответа на кнопку, но 20 секунд лучше, чем отчёт-черновик.
+     */
+    suspend fun writeReport(userId: UUID, entriesDigest: String): String? {
         if (!enabled || !AiLimiter.tryConsume(userId)) return null
-        return try {
-            val response: GroqResponse = client.post(GROQ_URL) {
-                header(HttpHeaders.Authorization, "Bearer $apiKey")
-                contentType(ContentType.Application.Json)
-                setBody(
-                    GroqRequest(
-                        model = model,
-                        messages = listOf(
-                            GroqMessage("system", reportPrompt),
-                            GroqMessage("user", baselineMarkdown),
-                        ),
-                        temperature = 0.4,
-                    ),
-                )
-            }.body()
-            response.choices.firstOrNull()?.message?.content?.trim()?.ifEmpty { null }
-        } catch (e: Exception) {
-            println("Отчёт: ошибка запроса к Groq — ${e.message}")
-            null
+        for (m in listOf(reportModel, model).distinct()) {
+            for (attempt in 0..1) {
+                try {
+                    val body = requestReport(m, entriesDigest)
+                    if (body != null) return body
+                    break // модель ответила, но не по формату — пробуем следующую
+                } catch (e: AiRateLimitedException) {
+                    if (attempt == 0 && e.retryAfter.seconds < 20) {
+                        delay(e.retryAfter.toMillis() + 500)
+                    } else {
+                        println("Отчёт: лимит Groq на модели $m — ${e.message}")
+                        break
+                    }
+                } catch (e: Exception) {
+                    println("Отчёт: ошибка запроса к Groq ($m) — ${e.message}")
+                    break
+                }
+            }
         }
+        return null
     }
+
+    private suspend fun requestReport(modelName: String, digest: String): String? {
+        val response = client.post(GROQ_URL) {
+            header(HttpHeaders.Authorization, "Bearer $apiKey")
+            contentType(ContentType.Application.Json)
+            setBody(
+                GroqRequest(
+                    model = modelName,
+                    messages = listOf(
+                        GroqMessage("system", reportPrompt),
+                        GroqMessage("user", digest),
+                    ),
+                    temperature = 0.3,
+                    // "medium", а не "high": на high модель тратит весь бюджет ответа на скрытые
+                    // рассуждения и возвращает пустой текст (finish_reason=length) — проверено.
+                    reasoningEffort = "medium",
+                    // Бюджет ответа (рассуждения + текст). Groq засчитывает его в лимит 8000
+                    // токенов в минуту ВМЕСТЕ с запросом: 6000 + данные отчёта давали 413
+                    // «Request too large». 3500 + digest (до ~3500 токенов) — с запасом влезают.
+                    maxCompletionTokens = 3500,
+                ),
+            )
+        }
+        if (response.status.value == 429) throw rateLimited(response.headers["retry-after"], response.bodyAsText())
+        if (!response.status.isSuccess()) error("Groq ответил ${response.status.value}: ${response.bodyAsText().take(200)}")
+        val choice = response.body<GroqResponse>().choices.firstOrNull()
+        val body = cleanReportBody(choice?.message?.content)
+        if (body == null) {
+            // Ответ пришёл, но не годится — пишем в лог, ПОЧЕМУ (иначе отчёт молча
+            // откатится к запасному варианту и причину не найти).
+            println(
+                "Отчёт: модель $modelName вернула неподходящий ответ (finish_reason=${choice?.finishReason}): " +
+                    choice?.message?.content.orEmpty().take(200).replace('\n', ' '),
+            )
+        }
+        return body
+    }
+
+    /**
+     * Привести ответ модели к телу отчёта: снять обёртку ```markdown ... ``` (модели иногда
+     * её добавляют) и выкинуть заголовок первого уровня, если модель всё-таки его написала, —
+     * заголовок ставит ReportGenerator. Пусто или нет ни одного раздела «##» → null (не годится).
+     * Функция чистая — покрыта юнит-тестом.
+     */
+    fun cleanReportBody(raw: String?): String? {
+        var text = raw?.trim() ?: return null
+        if (text.startsWith("```")) {
+            text = text.substringAfter('\n').substringBeforeLast("```").trim()
+        }
+        text = text.lineSequence().dropWhile { it.isBlank() || it.startsWith("# ") }.joinToString("\n").trim()
+        return text.takeIf { "## " in it }
+    }
+
+    /**
+     * Сколько ждать после 429. Groq присылает заголовок retry-after (секунды), а в тексте
+     * ошибки — «Please try again in 1.234s» или «in 2m3.5s». Берём что найдётся; иначе 10 с.
+     */
+    fun parseRetryAfter(header: String?, body: String): Duration {
+        header?.trim()?.toDoubleOrNull()?.let { return Duration.ofMillis((it * 1000).toLong()) }
+        val m = Regex("""try again in (?:(\d+)m)?([\d.]+)s""").find(body)
+        if (m != null) {
+            val minutes = m.groupValues[1].toLongOrNull() ?: 0
+            val seconds = m.groupValues[2].toDoubleOrNull() ?: 0.0
+            return Duration.ofMillis(minutes * 60_000 + (seconds * 1000).toLong())
+        }
+        return Duration.ofSeconds(10)
+    }
+
+    private fun rateLimited(header: String?, body: String) =
+        AiRateLimitedException(parseRetryAfter(header, body), "Groq: превышен лимит запросов (429)")
 
     private fun readSecret(key: String): String? {
         val file = File("secrets.properties")

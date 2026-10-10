@@ -4,15 +4,18 @@ package io.github.vihrea1337.devlog
  * Минимальный конвертер Markdown → HTML для отчётов: публичная страница `/r/{token}`
  * и предпросмотр в интерфейсе рендерятся этим же кодом.
  *
- * Поддерживает заголовки (#, ##, ###), маркированные списки (- ), жирный (**...**),
- * курсив (_..._) , таблицы с палками и абзацы. Не полноценный движок — ровно столько,
+ * Поддерживает заголовки (#, ##, ###), маркированные (- ) и нумерованные (1. ) списки,
+ * жирный (**...**), курсив (_..._), `код`, таблицы с палками и абзацы. Не полноценный движок — ровно столько,
  * сколько встречается в наших отчётах (в том числе в том, что возвращает ИИ:
  * он охотно строит таблицу «дата — что сделано», и без её поддержки отчёт для
  * работодателя выглядел бы строками с палками).
  */
 object Markdown {
     private val boldRegex = Regex("""\*\*(.+?)\*\*""")
-    private val italicRegex = Regex("""_([^_]+)_""")
+    // Курсив — только если подчёркивания стоят на границе слова: иначе имена вроде
+    // sync_seq или updated_at (их полно в технических отчётах) разваливались в курсив.
+    private val italicRegex = Regex("""(?<![\p{L}\d])_([^_]+)_(?![\p{L}\d])""")
+    private val orderedItem = Regex("""^\d+[.)] """)
 
     /** Строка-разделитель шапки таблицы: |---|:---:| и подобное. */
     private val tableSeparator = Regex("""^\|?[\s:|-]+\|[\s:|-]*$""")
@@ -23,10 +26,13 @@ object Markdown {
     fun toHtml(md: String): String {
         val out = StringBuilder()
         val lines = md.lines()
-        var inList = false
+        var inList: String? = null // "ul" или "ol" — какой список сейчас открыт
         var inTable = false
 
-        fun closeList() { if (inList) { out.append("</ul>\n"); inList = false } }
+        fun closeList() { inList?.let { out.append("</").append(it).append(">\n") }; inList = null }
+        fun openList(tag: String) {
+            if (inList != tag) { closeList(); out.append("<").append(tag).append(">\n"); inList = tag }
+        }
         fun closeTable() { if (inTable) { out.append("</tbody></table>\n"); inTable = false } }
         fun closeBlocks() { closeList(); closeTable() }
 
@@ -58,10 +64,16 @@ object Markdown {
                     }
                 }
 
-                line.startsWith("- ") -> {
+                line.startsWith("- ") || line.startsWith("* ") -> {
                     closeTable()
-                    if (!inList) { out.append("<ul>\n"); inList = true }
+                    openList("ul")
                     out.append("<li>").append(inline(line.substring(2))).append("</li>\n")
+                }
+
+                orderedItem.containsMatchIn(line) -> {
+                    closeTable()
+                    openList("ol")
+                    out.append("<li>").append(inline(line.replaceFirst(orderedItem, ""))).append("</li>\n")
                 }
 
                 line.isBlank() -> closeBlocks()
@@ -77,7 +89,25 @@ object Markdown {
     private fun splitRow(line: String): List<String> =
         line.trim().trim('|').split("|").map { it.trim() }
 
-    private fun inline(s: String): String =
+    /**
+     * Строчная разметка. Сначала режем строку по `обратным кавычкам`: внутри кода никакой
+     * разметки нет (там как раз живут подчёркивания и звёздочки), снаружи — жирный и курсив.
+     * Текст уже экранирован escapeHtml, поэтому код вставляем как есть.
+     */
+    private fun inline(s: String): String {
+        val parts = s.split('`')
+        // Нечётное число кавычек → последняя без пары: её частью кода не считаем.
+        val lastClosed = if (parts.size % 2 == 0) parts.size - 2 else parts.size - 1
+        return parts.mapIndexed { idx, part ->
+            when {
+                idx % 2 == 1 && idx <= lastClosed -> "<code>$part</code>"
+                idx % 2 == 1 -> "`" + emphasis(part)
+                else -> emphasis(part)
+            }
+        }.joinToString("")
+    }
+
+    private fun emphasis(s: String): String =
         italicRegex.replace(boldRegex.replace(s) { "<strong>${it.groupValues[1]}</strong>" }) {
             "<em>${it.groupValues[1]}</em>"
         }

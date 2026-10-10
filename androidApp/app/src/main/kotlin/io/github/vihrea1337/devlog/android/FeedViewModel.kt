@@ -102,7 +102,7 @@ class FeedViewModel : ViewModel() {
                 // Пока что-то обрабатывается ИИ — подтянем результат ещё раз через несколько секунд.
                 if (_state.value.entries.any { it.status == "queued" || it.status == "processing" }) refreshSoon()
             } catch (e: Exception) {
-                _state.update { it.copy(isLoading = false, error = e.message ?: "Ошибка сети") }
+                _state.update { it.copy(isLoading = false, error = e.humanMessage()) }
             }
         }
     }
@@ -176,9 +176,19 @@ class FeedViewModel : ViewModel() {
                 ApiClient.api.reprocess(id)
                 refresh()
             } catch (e: Exception) {
-                _state.update { it.copy(error = e.message ?: "Ошибка сети") }
+                _state.update { it.copy(error = e.humanMessage()) }
             }
         }
+    }
+
+    /**
+     * Сеть появилась (вызывает экран ленты через ConnectivityManager). Раньше очередь
+     * офлайн-записей уезжала на сервер только при следующем ручном действии — нажатии
+     * «Обновить» или новой правке; запись, сделанная в метро, так и висела «в очереди».
+     * Теперь синхронизация запускается сама. Если обновление уже идёт — второе не нужно.
+     */
+    fun onNetworkAvailable() {
+        if (!_state.value.isLoading) refresh()
     }
 
     /** Повторно обновить через несколько секунд — подтянуть результат фоновой обработки ИИ. */

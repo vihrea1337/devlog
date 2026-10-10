@@ -1,0 +1,48 @@
+name: Release
+
+# Релиз по тегу: git tag v1.2.0 && git push origin v1.2.0
+# Собирает APK и дистрибутив сервера и прикладывает их файлами к GitHub Release —
+# после каждого тега есть готовые сборки, а не только исходный код.
+on:
+  push:
+    tags: [ 'v*' ]
+
+# contents: write — чтобы экшен мог создать Release и загрузить в него файлы.
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Собрать APK и сервер, опубликовать релиз
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Установить JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+      - name: Тесты и дистрибутив сервера
+        working-directory: backend
+        run: |
+          chmod +x ./gradlew
+          ./gradlew :shared:test test distTar --no-daemon
+      - name: Принять лицензии Android SDK
+        run: yes | sdkmanager --licenses > /dev/null || true
+      - name: Собрать APK
+        working-directory: androidApp
+        run: |
+          chmod +x ./gradlew
+          ./gradlew :app:assembleDebug --no-daemon
+      # Имена с версией из тега: DevLog-v1.2.0.apk, devlog-backend-v1.2.0.tar.
+      - name: Подготовить файлы
+        run: |
+          mkdir out
+          cp androidApp/app/build/outputs/apk/debug/app-debug.apk "out/DevLog-${GITHUB_REF_NAME}.apk"
+          cp backend/build/distributions/devlog-backend-*.tar "out/devlog-backend-${GITHUB_REF_NAME}.tar"
+      - name: Опубликовать релиз
+        uses: softprops/action-gh-release@v2
+        with:
+          files: out/*
+          generate_release_notes: true

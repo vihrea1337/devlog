@@ -19,7 +19,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import android.net.ConnectivityManager
+import android.net.Network
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -27,6 +30,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -42,6 +46,20 @@ import java.time.LocalDate
  */
 @Composable
 fun FeedScreen(vm: FeedViewModel = viewModel()) {
+    // Автосинхронизация при появлении сети: офлайн-записи уедут на сервер сами.
+    // DisposableEffect подписывается, пока экран на виду, и отписывается при уходе с него.
+    val context = LocalContext.current
+    DisposableEffect(Unit) {
+        val cm = context.getSystemService(ConnectivityManager::class.java)
+        // Колбэк зовётся при КАЖДОМ появлении сети, в том числе сразу при подписке, если
+        // сеть уже есть, — лишний refresh() отсекает onNetworkAvailable (если уже идёт).
+        val callback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) = vm.onNetworkAvailable()
+        }
+        runCatching { cm?.registerDefaultNetworkCallback(callback) }
+        onDispose { runCatching { cm?.unregisterNetworkCallback(callback) } }
+    }
+
     val state by vm.state.collectAsState()
     var rawText by remember { mutableStateOf("") }
     var occurredOn by remember { mutableStateOf(LocalDate.now().toString()) }
