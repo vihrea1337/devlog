@@ -44,7 +44,7 @@ object ReportGenerator {
 
     /** Запрос к ИИ + выравнивание ответа под шаблон (см. EmployerReport.polishAi). */
     private suspend fun writeAi(userId: UUID, digest: String, employer: Boolean): String? =
-        aiWriter(userId, digest, employer)?.let { if (employer) EmployerReport.polishAi(it) else it }
+        aiWriter(userId, digest, employer)?.let { if (employer) EmployerReport.polishAi(it, digest) else it }
 
     suspend fun generate(
         userId: UUID,
@@ -233,7 +233,8 @@ object ReportGenerator {
 
     /** Подпись периода недели: «13–19 октября 2026» / «29 сентября — 5 октября 2026». */
     fun weekLabel(from: LocalDate, to: LocalDate): String =
-        if (from.month == to.month && from.year == to.year) "${from.dayOfMonth}–${humanDate(to)}"
+        if (from == to) humanDate(from)
+        else if (from.month == to.month && from.year == to.year) "${from.dayOfMonth}–${humanDate(to)}"
         else "${humanDate(from).substringBeforeLast(' ')} — ${humanDate(to)}"
 
     /**

@@ -351,14 +351,27 @@ object EmployerReport {
      * Выровнять текст от ИИ: модель иногда пишет пункты разделов без маркера списка
      * («**Тема** – …» отдельной строкой), и они слипаются в абзацы. В разделах кроме «Кратко»
      * такая строка становится пунктом «- **Тема** — …».
+     *
+     * [digest] — что ушло в ИИ. Если в нём нет ни одного пункта «Передано другим / нехватки»
+     * (или «Не делалось»), а модель такой раздел всё же написала — это выдумка (проверено на
+     * проде: «ждёт текстов» превратилось в «ждёт текстов от контент-команды»), раздел убираем.
      */
-    fun polishAi(md: String): String {
+    fun polishAi(md: String, digest: String? = null): String {
+        val allowGaps = digest == null || digest.contains("Передано другим")
+        val allowNotDone = digest == null || digest.contains("Не делалось") || digest.contains("Не сделано")
         var section = ""
-        return md.lines().joinToString("\n") { line ->
+        var skipping = false
+        val out = mutableListOf<String>()
+        for (line in md.lines()) {
             val t = line.trim()
-            if (t.startsWith("#")) section = t.trimStart('#').trim().lowercase()
-            if (!section.startsWith("кратко") && line.startsWith("**")) "- $line" else line
+            if (t.startsWith("#")) {
+                section = t.trimStart('#').trim().lowercase()
+                skipping = (!allowGaps && section.startsWith("передано")) || (!allowNotDone && section.startsWith("не сделано"))
+            }
+            if (skipping) continue
+            out += if (!section.startsWith("кратко") && line.startsWith("**")) "- $line" else line
         }
+        return out.joinToString("\n").trim()
     }
 
     /** Подпись в конце: откуда взялись разделы, а откуда цифры. */
