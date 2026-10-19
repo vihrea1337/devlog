@@ -223,4 +223,30 @@ class AiWorkerTest {
         assertTrue(AiWorker(FakeAi(), limiter = { true }).runOnce())
         assertEquals("structured", statusOf(id))
     }
+    @Test
+    fun `запись проекта с выключенным ИИ в Groq не уходит, даже если оказалась в очереди`() = runBlocking {
+        val project = ProjectRepository.create(userId, NewProject("Секретный", aiEnabled = true))
+        val input = ValidEntryInput(java.time.LocalDate.parse("2026-08-12"), "конфиденциально", UUID.fromString(project.id), "manual", null)
+        val id = UUID.fromString(EntryRepository.create(userId, input).id)
+        assertEquals("queued", statusOf(id))
+        // ИИ у проекта выключили уже ПОСЛЕ того, как запись встала в очередь.
+        ProjectRepository.update(userId, UUID.fromString(project.id), UpdateProject(aiEnabled = false))
+        val ai = FakeAi()
+
+        assertTrue(AiWorker(ai, limiter = { true }).runOnce())
+
+        assertEquals(0, ai.calls, "текст не отправлен во внешний ИИ")
+        assertEquals("draft", statusOf(id))
+        assertEquals(0, attemptsOf(id), "попытка не потрачена")
+    }
+
+    @Test
+    fun `запись в проект с выключенным ИИ сразу рождается черновиком — у воркера нет окна её схватить`() {
+        val project = ProjectRepository.create(userId, NewProject("Секретный", aiEnabled = false))
+        val input = ValidEntryInput(java.time.LocalDate.parse("2026-08-12"), "конфиденциально", UUID.fromString(project.id), "github", null)
+
+        val created = EntryRepository.create(userId, input)
+
+        assertEquals("draft", created.status)
+    }
 }

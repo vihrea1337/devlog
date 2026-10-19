@@ -188,4 +188,27 @@ class TextImportTest {
 
         assertEquals(HttpStatusCode.BadRequest, r.status)
     }
+    @Test
+    fun `импорт в проект с выключенным ИИ — черновики, а не очередь в Groq`() = testApplication {
+        application { module() }
+        val t = token(client, "textimport5@b.co")
+        val project = json.decodeFromString<ProjectDto>(
+            client.post("/api/projects") {
+                header(HttpHeaders.Authorization, "Bearer $t")
+                contentType(ContentType.Application.Json)
+                setBody("""{"name":"Секретный","aiEnabled":false}""")
+            }.bodyAsText(),
+        )
+
+        client.post("/api/import/text") {
+            header(HttpHeaders.Authorization, "Bearer $t")
+            contentType(ContentType.Application.Json)
+            setBody(Json.encodeToString(TextImportRequest.serializer(), TextImportRequest("2026-09-01 секрет", project.id)))
+        }
+
+        val feed = json.decodeFromString<List<EntryDto>>(
+            client.get("/api/entries") { header(HttpHeaders.Authorization, "Bearer $t") }.bodyAsText(),
+        )
+        assertEquals(listOf("draft"), feed.map { it.status }, "раньше импорт оставлял такие записи в очереди ИИ")
+    }
 }

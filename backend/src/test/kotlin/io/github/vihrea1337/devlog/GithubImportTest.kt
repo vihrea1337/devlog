@@ -98,6 +98,7 @@ class GithubImportTest {
         transaction { SchemaUtils.create(Users, GithubIntegrations, GitlabIntegrations, Projects, Entries, EntryStructured) }
         GithubImporter.fetchEvents = { _, _ -> eventsJson() }
         GithubImporter.fetchCompare = defaultFetchCompare()
+        GithubImporter.fetchRepoCommits = { _, _, _, _, _, _ -> error("в этом тесте режим репозитория не ожидается") }
     }
 
     @AfterTest
@@ -170,14 +171,129 @@ class GithubImportTest {
     }
 
     @Test
-    fun `текст записи содержит репозиторий, суть коммита и короткий sha`() {
+    fun `текст записи содержит репозиторий, суть коммита, короткий sha и описание`() {
         val commits = listOf(GithubCommit("vihrea1337/devlog", "Мягкое удаление\n\nдетали", "abcdef1234567890"))
         val text = GithubImporter.buildEntryText(today, commits)
 
-        assertTrue(text.contains("vihrea1337/devlog"))
-        assertTrue(text.contains("Мягкое удаление"))
-        assertTrue(text.contains("abcdef1"), "нужен короткий sha: $text")
-        assertTrue(!text.contains("детали"), "тело коммита в заголовок не тащим")
+        assertTrue(text.contains("- vihrea1337/devlog: Мягкое удаление (abcdef1)"), text)
+        assertTrue(text.contains("\n  детали"), "описание коммита — строкой с отступом под заголовком: $text")
+    }
+
+    @Test
+    fun `описание коммита без служебных подписей и не длиннее лимита`() {
+        val message = "feat(android)\n\nПуш-уведомления: разрешение после входа.\n\nCo-Authored-By: Bot <b@x>\nSigned-off-by: A"
+        assertEquals(listOf("Пуш-уведомления: разрешение после входа."), GithubImporter.commitBody(message))
+
+        val long = "fix\n\n" + "слово ".repeat(300)
+        val body = GithubImporter.commitBody(long)
+        assertTrue(body.sumOf { it.length } <= 601, "простыню режем")
+        assertTrue(body.last().endsWith("…"))
+    }
+
+    // --- Режим «один репозиторий» ---
+
+    /** Страница /repos/{repo}/commits: GitHub отдаёт от новых к старым. */
+    private fun repoCommitsJson(): String = """
+        [
+          {"sha": "r3", "parents": [{"sha": "r2"}], "commit": {"message": "fix(android)\n\nКапча не прячет клавиатуру", "author": {"date": "${today}T15:00:00Z"}}},
+          {"sha": "m1", "parents": [{"sha": "a"}, {"sha": "b"}], "commit": {"message": "Merge branch 'main'", "author": {"date": "${today}T14:00:00Z"}}},
+          {"sha": "r2", "parents": [{"sha": "r1"}], "commit": {"message": "feat(android)\n\nПуш-уведомления", "author": {"date": "${today}T10:00:00Z"}}},
+          {"sha": "r1", "parents": [], "commit": {"message": "Первый экран", "author": {"date": "${today.minusDays(200)}T10:00:00Z"}}}
+        ]
+    """.trimIndent()
+
+    private suspend fun importRepo(client: HttpClient, token: String, repo: String, from: LocalDate): io.ktor.client.statement.HttpResponse =
+        client.post("/api/import/github") {
+            header(HttpHeaders.Authorization, "Bearer $token")
+            contentType(ContentType.Application.Json)
+            setBody("""{"periodStart":"$from","periodEnd":"$today","repo":"$repo"}""")
+        }
+
+    @Test
+    fun `адрес репозитория принимается и ссылкой, мусор — нет`() {
+        assertEquals("owner/repo", GithubImporter.normalizeRepo("https://github.com/owner/repo.git"))
+        assertEquals("owner/repo.name", GithubImporter.normalizeRepo(" owner/repo.name/ "))
+        assertNull(GithubImporter.normalizeRepo("owner"))
+        assertNull(GithubImporter.normalizeRepo("owner/repo/extra"))
+        assertNull(GithubImporter.normalizeRepo("../../etc"))
+    }
+
+    @Test
+    fun `разбор коммитов репозитория пропускает merge и даты вне периода`() {
+        val list = GithubImporter.parseRepoCommits(repoCommitsJson(), "o/r", today.minusDays(7), today)
+        assertEquals(listOf("r3", "r2"), list.map { it.second.sha })
+        assertTrue(list.all { it.first == today })
+    }
+
+    @Test
+    fun `режим репозитория — коммиты автора с описанием, без лимита 90 дней, повтор дописывает новые`() = testApplication {
+        application { module() }
+        val t = token(client, "ghr1@b.co")
+        setLogin(client, t, "vihrea1337")
+        var commits = repoCommitsJson()
+        val asked = mutableListOf<String>()
+        GithubImporter.fetchRepoCommits = { repo, author, from, _, page, _ ->
+            asked += "$repo|$author|$from|$page"
+            commits
+        }
+
+        val first = importRepo(client, t, "https://github.com/Owner/Repo", today.minusDays(300))
+        assertEquals(HttpStatusCode.OK, first.status, first.bodyAsText())
+        val r1 = json.decodeFromString<ImportResultDto>(first.bodyAsText())
+        assertEquals(2, r1.days, "сегодня и 200 дней назад — старше ленты событий")
+        assertEquals(1, asked.size, "страница меньше 100 — дальше не листаем")
+        assertTrue(asked.single().startsWith("Owner/Repo|vihrea1337|"))
+
+        val feed = json.decodeFromString<List<EntryDto>>(
+            client.get("/api/entries") { header(HttpHeaders.Authorization, "Bearer $t") }.bodyAsText(),
+        )
+        val todayEntry = feed.single { it.occurredOn == today.toString() }
+        assertTrue(todayEntry.rawText.contains("в Owner/Repo"))
+        assertTrue(todayEntry.rawText.indexOf("Пуш-уведомления") < todayEntry.rawText.indexOf("Капча"), "в порядке работы: ${todayEntry.rawText}")
+        assertFalse(todayEntry.rawText.contains("Merge"))
+
+        // За день появился ещё коммит — повторный импорт дописывает его в ту же запись.
+        commits = commits.replaceFirst("[", """[{"sha": "r4", "parents": [{"sha": "r3"}], "commit": {"message": "Тесты", "author": {"date": "${today}T18:00:00Z"}}},""")
+        val r2 = json.decodeFromString<ImportResultDto>(importRepo(client, t, "Owner/Repo", today.minusDays(300)).bodyAsText())
+        assertEquals(1, r2.updated)
+        assertEquals(0, r2.created)
+        val updated = json.decodeFromString<List<EntryDto>>(
+            client.get("/api/entries") { header(HttpHeaders.Authorization, "Bearer $t") }.bodyAsText(),
+        ).single { it.occurredOn == today.toString() }
+        assertTrue(updated.rawText.contains("Тесты (r4)"))
+    }
+
+    @Test
+    fun `режим репозитория — кривой адрес и ошибка доступа объясняются`() = testApplication {
+        application { module() }
+        val t = token(client, "ghr2@b.co")
+        setLogin(client, t, "vihrea1337")
+        GithubImporter.fetchRepoCommits = { _, _, _, _, _, _ -> error("Репозиторий не найден или нет доступа") }
+
+        assertEquals(HttpStatusCode.BadRequest, importRepo(client, t, "не репозиторий", today.minusDays(1)).status)
+        val r = importRepo(client, t, "o/r", today.minusDays(1))
+        assertEquals(HttpStatusCode.BadGateway, r.status)
+        assertTrue(r.bodyAsText().contains("нет доступа"))
+    }
+
+    @Test
+    fun `режим репозитория листает страницы и честно помечает обрезку`() = testApplication {
+        application { module() }
+        val t = token(client, "ghr3@b.co")
+        setLogin(client, t, "vihrea1337")
+        var pages = 0
+        GithubImporter.fetchRepoCommits = { _, _, _, _, page, _ ->
+            pages++
+            (1..100).joinToString(",", "[", "]") { i ->
+                """{"sha": "p${page}c$i", "parents": [{"sha": "x"}], "commit": {"message": "коммит $i", "author": {"date": "${today}T10:00:00Z"}}}"""
+            }
+        }
+
+        val r = json.decodeFromString<ImportResultDto>(importRepo(client, t, "o/r", today.minusDays(1)).bodyAsText())
+
+        assertEquals(MAX_REPO_PAGES, pages)
+        assertTrue(r.truncated)
+        assertEquals(100 * MAX_REPO_PAGES, r.commits)
     }
 
     // --- Полный импорт через HTTP ---

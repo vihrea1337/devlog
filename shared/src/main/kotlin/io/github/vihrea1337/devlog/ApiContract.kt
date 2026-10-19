@@ -208,6 +208,18 @@ data class NewReport(
     val projectId: String? = null,
     val title: String? = null,
     val format: String = "markdown",
+    /**
+     * Вид отчёта: "default" — по темам (Кратко / Результаты / Решения / Проблемы), "employer" —
+     * «Отчёт работодателю»: Сделано / Проверено / Передано другим / Не сделано и почему, цифры
+     * периода сложены кодом из разделов «Цифры» записей дня.
+     */
+    val template: String = "default",
+    /**
+     * Собрать из уже готовых (и вычитанных) недельных отчётов за этот период, а не из всех
+     * записей сразу: длинный месяц иначе не влезает в лимит бесплатного ИИ и теряет детали.
+     * Дни, не покрытые недельными отчётами, добавляются из записей.
+     */
+    val fromWeeklyReports: Boolean = false,
 )
 
 /** Готовый отчёт. */
@@ -263,6 +275,13 @@ data class GithubImportRequest(
     val periodStart: String,
     val periodEnd: String,
     val projectId: String? = null,
+    /**
+     * "владелец/репозиторий" — режим «один репозиторий»: коммиты берутся из него напрямую
+     * (`/repos/{repo}/commits?author=…`), а не из ленты событий. Нет лимита ~90 дней ленты,
+     * видны и чужие репозитории, куда пользователь коммитит (с токеном — и приватные).
+     * null/пусто — прежний режим по ленте событий.
+     */
+    val repo: String? = null,
 )
 
 @Serializable
@@ -273,6 +292,51 @@ data class ImportResultDto(
     val skipped: Int,
     /** Догрузка коммитов остановилась раньше конца периода — упёрлись в лимит запросов. */
     val truncated: Boolean = false,
+    /** Сколько уже импортированных дней обновлено (за день появились новые коммиты). */
+    val updated: Int = 0,
+)
+
+// --- Импорт файлов дня (записи вида «ГГГГ-ММ-ДД.md» с разделами «Сделано», «Проверено»…) ---
+
+/** Один файл: имя (из него берётся дата) и содержимое. */
+@Serializable
+data class DayFileDto(val name: String, val text: String)
+
+/** Тело POST /api/import/day-files: сразу несколько файлов (например, папка месяца). */
+@Serializable
+data class DayFilesImportRequest(
+    val files: List<DayFileDto>,
+    val projectId: String? = null,
+    /**
+     * Заменить файлом и те записи, что правили руками в DevLog или удалили. По умолчанию
+     * false: повторный (в т.ч. автоматический) импорт не должен молча терять ручные правки.
+     */
+    val overwrite: Boolean = false,
+)
+
+/**
+ * Что стало с одним файлом. status:
+ * created — новая запись; updated — файл дописан, запись обновлена; unchanged — ничего не
+ * поменялось; edited — запись правили руками в DevLog, импорт её не перезаписал; deleted —
+ * запись удалена пользователем, не воскрешаем; error — файл не принят (см. message).
+ */
+@Serializable
+data class DayFileResultDto(
+    val name: String,
+    val date: String? = null,
+    val status: String,
+    /** Разделы записи разобраны кодом (без ИИ). false — запись ушла в очередь ИИ/черновик. */
+    val parsedByCode: Boolean = false,
+    val message: String? = null,
+)
+
+@Serializable
+data class DayFilesImportResultDto(
+    val created: Int,
+    val updated: Int,
+    val unchanged: Int,
+    val failed: Int,
+    val files: List<DayFileResultDto>,
 )
 
 // --- Импорт коммитов с GitLab (та же форма результата — ImportResultDto выше) ---

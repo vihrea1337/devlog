@@ -64,6 +64,18 @@ private const val ZERO_SHA = "0000000000000000000000000000000000000000"
 internal const val MAX_COMPARE_CALLS_ANONYMOUS = 15
 internal const val MAX_COMPARE_CALLS_AUTHENTICATED = 150
 
+/** Сколько символов описания коммита брать в запись: суть — да, простыня — нет. */
+private const val MAX_COMMIT_BODY_CHARS = 600
+
+/** Служебные подписи в конце сообщения коммита — для дневника это шум. */
+private val TRAILER = Regex("""^(Co-Authored-By|Signed-off-by|Reviewed-by|Change-Id):.*""", RegexOption.IGNORE_CASE)
+
+/** Режим «один репозиторий»: максимум страниц по 100 коммитов за один импорт. internal — для теста. */
+internal const val MAX_REPO_PAGES = 10
+
+/** "владелец/репозиторий" по правилам имён GitHub. */
+private val REPO_NAME = Regex("""^[A-Za-z0-9][A-Za-z0-9-]{0,38}/[A-Za-z0-9._-]{1,100}$""")
+
 /** Результат импорта для ответа клиенту. */
 data class ImportResult(
     val days: Int,
@@ -72,6 +84,8 @@ data class ImportResult(
     val skipped: Int,
     /** Догрузка коммитов остановилась раньше конца — упёрлись в лимит запросов (свой или GitHub). */
     val truncated: Boolean,
+    /** Дни, запись которых обновлена: за день появились новые коммиты. */
+    val updated: Int = 0,
 )
 
 /**
@@ -181,15 +195,188 @@ object GithubImporter {
         }
     }
 
-    /** Текст записи из коммитов за день — это и есть сырьё, которое дальше разберёт ИИ. */
-    fun buildEntryText(day: LocalDate, commits: List<GithubCommit>): String {
-        val header = "Коммиты за $day (импорт из GitHub, ${commits.size} шт.):"
+    /**
+     * Текст записи из коммитов за день — это и есть сырьё, которое дальше разберёт ИИ.
+     * [repo] не null — режим «один репозиторий»: имя репозитория уже в заголовке, в строках не повторяем.
+     */
+    fun buildEntryText(day: LocalDate, commits: List<GithubCommit>, repo: String? = null): String {
+        val where = if (repo != null) " в $repo" else ""
+        val header = "Коммиты за $day$where (импорт из GitHub, ${commits.size} шт.):"
         val lines = commits.joinToString("\n") { commit ->
-            // Первая строка сообщения — суть коммита; остальное (тело) обычно менее важно.
-            val title = commit.message.lineSequence().first()
-            "- ${commit.repo}: $title (${commit.sha.take(7)})"
+            val title = commit.message.lineSequence().first().trim()
+            val prefix = if (repo != null) "" else "${commit.repo}: "
+            "- $prefix$title (${commit.sha.take(7)})" + commitBody(commit.message).joinToString("") { "\n  $it" }
         }
         return (header + "\n" + lines).take(MAX_RAW_TEXT_LENGTH)
+    }
+
+    /**
+     * Описание коммита (всё после первой строки) — без пустых строк и служебных подписей
+     * (`Co-Authored-By:`, `Signed-off-by:`), не длиннее [MAX_COMMIT_BODY_CHARS] символов.
+     *
+     * Раньше брали только первую строку — «суть коммита». Но при соглашении Conventional
+     * Commits первая строка бывает просто типом (`feat(android)`), а вся суть — в описании:
+     * импорт видел бы десятки раз «feat(android)» и ничего больше.
+     */
+    fun commitBody(message: String): List<String> {
+        val lines = message.lines().drop(1).map { it.trim() }
+            .filter { it.isNotEmpty() && !TRAILER.matches(it) }
+        val out = mutableListOf<String>()
+        var used = 0
+        for (line in lines) {
+            if (used + line.length > MAX_COMMIT_BODY_CHARS) {
+                val rest = MAX_COMMIT_BODY_CHARS - used
+                out.add(if (rest > 40) line.take(rest).substringBeforeLast(' ') + "…" else "…")
+                break
+            }
+            out.add(line)
+            used += line.length
+        }
+        return out
+    }
+
+    /**
+     * Режим «один репозиторий»: страница коммитов автора за период —
+     * `GET /repos/{repo}/commits?author=&since=&until=&per_page=100&page=N`.
+     * В отличие от ленты событий, здесь нет потолка «~90 дней и 300 событий» и не нужен
+     * отдельный запрос на каждый пуш: GitHub сразу отдаёт сообщения коммитов.
+     * Вынесено в переменную, чтобы тесты подставляли свой ответ.
+     */
+    var fetchRepoCommits: suspend (repo: String, author: String, from: LocalDate, to: LocalDate, page: Int, token: String?) -> String =
+        { repo, author, from, to, page, token ->
+            val response = client.get("https://api.github.com/repos/$repo/commits") {
+                url.parameters.append("author", author)
+                url.parameters.append("since", "${from}T00:00:00Z")
+                // until — начало СЛЕДУЮЩЕГО дня: иначе коммиты последнего дня периода не попали бы.
+                url.parameters.append("until", "${to.plusDays(1)}T00:00:00Z")
+                url.parameters.append("per_page", "100")
+                url.parameters.append("page", page.toString())
+                header(HttpHeaders.Accept, "application/vnd.github+json")
+                header(HttpHeaders.UserAgent, "DevLog")
+                if (token != null) header(HttpHeaders.Authorization, "Bearer $token")
+            }
+            when {
+                response.status.isSuccess() -> response.bodyAsText()
+                // 409 — в репозитории ещё нет ни одного коммита: это не ошибка, просто пусто.
+                response.status.value == 409 -> "[]"
+                response.status.value == 403 && response.headers["X-RateLimit-Remaining"] == "0" ->
+                    throw GithubRateLimitException()
+                else -> error(
+                    when (response.status.value) {
+                        404 -> "Репозиторий $repo не найден или нет доступа. Для приватного (в т.ч. чужого) " +
+                            "репозитория нужен классический токен GitHub с правом repo"
+                        401 -> "Токен GitHub недействителен или истёк — привяжите новый в настройках"
+                        403 -> "GitHub отказал в доступе к $repo — токену не хватает прав"
+                        else -> "GitHub ответил ${response.status.value}"
+                    },
+                )
+            }
+        }
+
+    /**
+     * Привести ввод пользователя к "владелец/репозиторий": принимает и ссылку
+     * `https://github.com/owner/repo(.git)`. null — это не похоже на репозиторий GitHub.
+     */
+    fun normalizeRepo(raw: String): String? {
+        val cleaned = raw.trim()
+            .removePrefix("https://").removePrefix("http://").removePrefix("www.").removePrefix("github.com/")
+            .removeSuffix("/").removeSuffix(".git")
+        return cleaned.takeIf { REPO_NAME.matches(it) }
+    }
+
+    /**
+     * Разобрать страницу `/repos/{repo}/commits` в коммиты по дням (по дате АВТОРА коммита,
+     * в UTC — как и у ленты событий). Merge-коммиты (больше одного родителя) пропускаем:
+     * «Merge branch …» ничего не говорит о работе. Чистая функция — тестируется без сети.
+     */
+    fun parseRepoCommits(body: String, repo: String, from: LocalDate, to: LocalDate): List<Pair<LocalDate, GithubCommit>> {
+        val array = runCatching { json.parseToJsonElement(body).jsonArray }.getOrElse { return emptyList() }
+        return array.mapNotNull { element ->
+            val obj = element.jsonObject
+            val sha = obj["sha"]?.jsonPrimitive?.content.orEmpty()
+            val commit = obj["commit"]?.jsonObject ?: return@mapNotNull null
+            val message = commit["message"]?.jsonPrimitive?.content?.trim().orEmpty()
+            val date = commit["author"]?.jsonObject?.get("date")?.jsonPrimitive?.content
+                ?: commit["committer"]?.jsonObject?.get("date")?.jsonPrimitive?.content
+                ?: return@mapNotNull null
+            val day = runCatching { Instant.parse(date).atZone(ZoneOffset.UTC).toLocalDate() }.getOrNull()
+                ?: return@mapNotNull null
+            val parents = runCatching { obj["parents"]?.jsonArray?.size }.getOrNull() ?: 1
+            if (sha.isEmpty() || message.isEmpty() || parents > 1 || day < from || day > to) null
+            else day to GithubCommit(repo, message, sha)
+        }
+    }
+
+    /** id записи в режиме «один репозиторий»: свой на каждый репозиторий и день. */
+    fun repoEntryIdFor(userId: UUID, repo: String, day: LocalDate): UUID =
+        UUID.nameUUIDFromBytes("devlog-github-repo:$userId:${repo.lowercase()}:$day".toByteArray())
+
+    /**
+     * Импорт коммитов автора [login] из одного репозитория [repo] за период. Повторный импорт
+     * дописывает в запись дня появившиеся коммиты (если запись не правили руками) —
+     * см. ImportedEntries.
+     */
+    suspend fun importRepo(
+        userId: UUID,
+        login: String,
+        repo: String,
+        from: LocalDate,
+        to: LocalDate,
+        projectId: UUID?,
+        token: String? = null,
+    ): ImportResult {
+        val byDay = sortedMapOf<LocalDate, MutableList<GithubCommit>>()
+        var truncated = false
+        for (page in 1..MAX_REPO_PAGES) {
+            val body = try {
+                fetchRepoCommits(repo, login, from, to, page, token)
+            } catch (e: GithubRateLimitException) {
+                // Лимит GitHub посреди страниц — сохраняем то, что уже собрали.
+                if (page == 1) throw IllegalStateException("GitHub временно отказывает в запросах (превышен лимит). Попробуйте позже")
+                truncated = true
+                break
+            }
+            val pageSize = runCatching { json.parseToJsonElement(body).jsonArray.size }.getOrDefault(0)
+            parseRepoCommits(body, repo, from, to).forEach { (day, c) -> byDay.getOrPut(day) { mutableListOf() }.add(c) }
+            if (pageSize < 100) break
+            if (page == MAX_REPO_PAGES) truncated = true
+        }
+        // GitHub отдаёт коммиты от новых к старым — в записи дня удобнее в порядке работы.
+        val days = byDay.mapValues { (_, list) -> list.distinctBy { it.sha }.reversed() }
+        return saveDays(userId, days, truncated) { day, commits ->
+            ImportedEntries.Prepared(
+                id = repoEntryIdFor(userId, repo, day),
+                input = ValidEntryInput(day, buildEntryText(day, commits, repo), projectId, "github", null),
+                source = "github:$repo",
+            )
+        }
+    }
+
+    /** Общая часть обоих режимов: записи по дням через ImportedEntries и подсчёт итогов. */
+    private fun saveDays(
+        userId: UUID,
+        days: Map<LocalDate, List<GithubCommit>>,
+        truncated: Boolean,
+        prepare: (LocalDate, List<GithubCommit>) -> ImportedEntries.Prepared,
+    ): ImportResult {
+        var created = 0
+        var updated = 0
+        var skipped = 0
+        for ((day, commits) in days) {
+            when (ImportedEntries.upsert(userId, prepare(day, commits))) {
+                ImportedEntries.Outcome.CREATED -> created++
+                ImportedEntries.Outcome.UPDATED -> updated++
+                else -> skipped++
+            }
+        }
+        return ImportResult(
+            days = days.size,
+            commits = days.values.sumOf { it.size },
+            created = created,
+            skipped = skipped,
+            truncated = truncated,
+            updated = updated,
+        )
     }
 
     /**
@@ -203,7 +390,8 @@ object GithubImporter {
     /**
      * Импортировать коммиты за период в записи дневника. token = null → только публичная
      * активность; token != null (привязан в настройках) → видно и приватные репозитории.
-     * Уже существующие дни не трогаем — иначе затёрли бы правки, сделанные руками.
+     * Уже существующий день дополняется новыми коммитами, только если запись не правили
+     * руками (см. ImportedEntries) — иначе затёрли бы правки пользователя.
      */
     suspend fun import(
         userId: UUID,
@@ -242,31 +430,12 @@ object GithubImporter {
         }
         // Один и тот же коммит может прийти из нескольких пушей (например, повторный push той же ветки).
         val byDay = commitsByDay.mapValues { (_, list) -> list.distinctBy { it.sha } }
-
-        var created = 0
-        var skipped = 0
-        var commits = 0
-
-        for ((day, dayCommits) in byDay) {
-            commits += dayCommits.size
-            val entryId = entryIdFor(userId, day)
-            if (EntryRepository.getById(userId, entryId) != null) {
-                skipped++
-                continue
-            }
-            EntryRepository.create(
-                userId,
-                ValidEntryInput(
-                    occurredOn = day,
-                    rawText = buildEntryText(day, dayCommits),
-                    projectId = projectId,
-                    sourceType = "github",
-                    timeSpentMin = null,
-                    id = entryId,
-                ),
+        return saveDays(userId, byDay, truncated) { day, commits ->
+            ImportedEntries.Prepared(
+                id = entryIdFor(userId, day),
+                input = ValidEntryInput(day, buildEntryText(day, commits), projectId, "github", null),
+                source = "github:events",
             )
-            created++
         }
-        return ImportResult(days = byDay.size, commits = commits, created = created, skipped = skipped, truncated = truncated)
     }
 }

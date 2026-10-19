@@ -97,6 +97,16 @@ class AiWorker(
         val stuckBefore = Instant.now().minus(stuckAfter)
         val job = EntryRepository.claimNextAiJob(stuckBefore, maxAttempts, skipUsers = limitedUsersToday()) ?: return false
 
+        // Последний рубеж конфиденциальности: у проекта выключен ИИ (например, выключили уже
+        // ПОСЛЕ того, как записи встали в очередь, или запись попала в очередь в обход
+        // проверки) — текст в Groq не отправляем, запись становится черновиком.
+        if (!ProjectRepository.isAiEnabled(job.userId, job.projectId)) {
+            EntryRepository.releaseAiJob(job.id, job.attempt, null)
+            EntryRepository.setStatus(job.userId, job.id, "draft")
+            EntryEventBus.publish(job.userId, job.id, "draft")
+            return true
+        }
+
         // Суточный лимит на пользователя: не даём одному аккаунту сжечь общий лимит Groq.
         if (!limiter(job.userId)) {
             limitedUntilTomorrow[job.userId] = LocalDate.now()

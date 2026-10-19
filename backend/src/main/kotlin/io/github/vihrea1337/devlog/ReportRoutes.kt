@@ -40,7 +40,7 @@ fun Route.reportRoutes() {
             // Отчёт по проекту называем по проекту: в списке сразу видно, о чём он.
             val title = body.title?.trim()?.ifBlank { null }?.take(200)
                 ?: ReportGenerator.defaultTitle(from, to, projectName = project?.name)
-            val md = ReportGenerator.generate(call.userId(), title, from, to, projectId)
+            val md = ReportGenerator.generate(call.userId(), title, from, to, projectId, body.template, body.fromWeeklyReports)
             call.respond(ReportRepository.create(call.userId(), projectId, title, from, to, body.format, md))
         }
 

@@ -36,16 +36,10 @@ fun Route.entryRoutes() = authenticate("auth-jwt") {
             is Validated.Invalid -> return@post call.badRequest(checked.message)
             is Validated.Ok -> checked.value
         }
-        val saved = EntryRepository.create(call.userId(), input)
-        if (!ProjectRepository.isAiEnabled(call.userId(), input.projectId)) {
-            // Проект с выключенным ИИ (конфиденциально) — в Groq не отправляем, помечаем черновиком.
-            EntryRepository.setStatus(call.userId(), UUID.fromString(saved.id), "draft")
-            call.respond(saved.copy(status = "draft"))
-            return@post
-        }
-        // Иначе запись остаётся в статусе queued: её подберёт AiWorker (очередь живёт в базе,
-        // поэтому обработка не потеряется, даже если сервер прямо сейчас перезапустят).
-        call.respond(saved)
+        // Статус выбирает сам репозиторий в той же транзакции: у проекта с выключенным ИИ
+        // запись сразу "draft" (в Groq не уходит), иначе "queued" — её подберёт AiWorker
+        // (очередь живёт в базе, поэтому обработка не потеряется даже при перезапуске сервера).
+        call.respond(EntryRepository.create(call.userId(), input))
     }
 
     /**
@@ -95,15 +89,16 @@ fun Route.entryRoutes() = authenticate("auth-jwt") {
         }
         // Текст поменялся — структура от ИИ относится к старому тексту, она больше не верна.
         // Ставим запись в очередь заново (или в черновик, если у проекта ИИ выключен).
+        // Файл дня с разделами разбирает заново код — ИИ ему не нужен.
         if (patch.rawText == null) {
             call.respond(updated)
             return@put
         }
         val projUuid = updated.projectId?.let(UUID::fromString)
-        if (ProjectRepository.isAiEnabled(call.userId(), projUuid)) {
-            EntryRepository.requeueForAi(call.userId(), id)
-        } else {
-            EntryRepository.setStatus(call.userId(), id, "draft")
+        when {
+            DayFileImporter.restructure(call.userId(), updated) -> Unit
+            ProjectRepository.isAiEnabled(call.userId(), projUuid) -> EntryRepository.requeueForAi(call.userId(), id)
+            else -> EntryRepository.setStatus(call.userId(), id, "draft")
         }
         call.respond(EntryRepository.getById(call.userId(), id) ?: updated)
     }
@@ -119,6 +114,11 @@ fun Route.entryRoutes() = authenticate("auth-jwt") {
         val entry = EntryRepository.getById(call.userId(), id)
         if (entry == null) {
             call.respond(HttpStatusCode.NotFound)
+            return@post
+        }
+        // Файл дня с разделами разбирает код — «переобработать» значит разобрать заново им же.
+        if (DayFileImporter.restructure(call.userId(), entry)) {
+            call.respond(HttpStatusCode.Accepted)
             return@post
         }
         // Уважаем выключатель ИИ проекта: если он выключен — просто помечаем черновиком.

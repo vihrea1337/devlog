@@ -112,7 +112,13 @@ object EntryRepository {
             it[occurredOn] = input.occurredOn
             it[rawText] = input.rawText
             it[sourceType] = input.sourceType
-            it[status] = "queued"
+            it[sourceRef] = input.sourceRef
+            // Статус решаем ЗДЕСЬ, в той же транзакции, что и вставку. Раньше запись всегда
+            // рождалась "queued", а черновиком её делал уже вызывающий код — и то не везде:
+            // импорт GitHub/GitLab/текста в проект с выключенным ИИ оставлял записи в очереди,
+            // и воркер отправлял конфиденциальный текст в Groq. Да и у ручной записи было
+            // окно в миллисекунды, когда воркер успевал её схватить до пометки "draft".
+            it[status] = input.initialStatus ?: if (aiEnabledInTx(userId, input.projectId)) "queued" else "draft"
             it[timeSpentMin] = input.timeSpentMin
             it[createdAt] = now
             it[updatedAt] = now
@@ -120,6 +126,57 @@ object EntryRepository {
         }
         findInTx(userId, newId)!!
     }
+
+    /**
+     * Включён ли ИИ у проекта — внутри уже открытой транзакции. Запись без проекта или
+     * с чужим/несуществующим проектом — как в [ProjectRepository.isAiEnabled]: «да».
+     */
+    private fun aiEnabledInTx(userId: UUID, projectId: UUID?): Boolean {
+        if (projectId == null) return true
+        return Projects.selectAll()
+            .where { (Projects.id eq projectId) and (Projects.userId eq userId) }
+            .map { it[Projects.aiEnabled] }
+            .singleOrNull() ?: true
+    }
+
+    /**
+     * Что нужно импорту, чтобы решить «создать / обновить / не трогать» (см. ImportedEntries):
+     * текущий текст, отпечаток источника и не удалена ли запись. Надгробия тоже отдаём —
+     * удалённую пользователем запись импорт не должен воскрешать.
+     */
+    data class ImportState(val rawText: String, val sourceRef: String?, val deleted: Boolean, val projectId: UUID?)
+
+    fun importState(userId: UUID, id: UUID): ImportState? = transaction {
+        Entries.selectAll()
+            .where { (Entries.id eq id) and (Entries.userId eq userId) }
+            .map { ImportState(it[Entries.rawText], it[Entries.sourceRef], it[Entries.deletedAt] != null, it[Entries.projectId]) }
+            .singleOrNull()
+    }
+
+    /**
+     * Заменить текст импортированной записи новой версией источника (файл дня дописали,
+     * за день добавились коммиты). Старая структура ИИ сразу удаляется — она описывает
+     * прежний текст; статус ставит вызывающий код (очередь ИИ, черновик или разбор кодом).
+     */
+    fun replaceImported(userId: UUID, id: UUID, rawText: String, sourceRef: String?, projectId: UUID?, status: String): Boolean =
+        transaction {
+            // Надгробие тоже восстанавливается: заменять удалённую запись импорт зовёт, только
+            // когда пользователь сам попросил (overwrite), см. ImportedEntries.upsert.
+            val changed = Entries.update({ (Entries.id eq id) and (Entries.userId eq userId) }) {
+                it[deletedAt] = null
+                it[Entries.rawText] = rawText
+                it[Entries.sourceRef] = sourceRef
+                it[Entries.projectId] = projectId
+                it[Entries.status] = status
+                it[aiAttempts] = 0
+                it[aiError] = null
+                it[aiStartedAt] = null
+                it[updatedAt] = Instant.now()
+                it[syncSeq] = EntriesSyncSeq.nextLongVal()
+            }
+            if (changed > 0) EntryStructured.deleteWhere { EntryStructured.entryId eq id }
+            changed > 0
+        }
 
     /** Частичная правка: меняем только переданные поля. */
     fun update(userId: UUID, id: UUID, patch: ValidEntryPatch): EntryDto? {
@@ -203,7 +260,7 @@ object EntryRepository {
     // --- Очередь обработки ИИ (пользуется AiWorker) ---
 
     /** Запись, взятая воркером в обработку. */
-    data class AiJob(val id: UUID, val userId: UUID, val rawText: String, val attempt: Int)
+    data class AiJob(val id: UUID, val userId: UUID, val rawText: String, val attempt: Int, val projectId: UUID? = null)
 
     /**
      * Взять следующую запись в обработку и сразу пометить её как processing.
@@ -235,6 +292,7 @@ object EntryRepository {
                         rawText = it[Entries.rawText],
                         status = it[Entries.status],
                         attempts = it[Entries.aiAttempts],
+                        projectId = it[Entries.projectId],
                     )
                 }
                 .filterNot { it.userId in skipUsers }
@@ -250,7 +308,7 @@ object EntryRepository {
                     it[updatedAt] = now
                     it[syncSeq] = EntriesSyncSeq.nextLongVal()
                 }
-                if (claimed > 0) return@transaction AiJob(c.id, c.userId, c.rawText, c.attempts + 1)
+                if (claimed > 0) return@transaction AiJob(c.id, c.userId, c.rawText, c.attempts + 1, c.projectId)
             }
             null
         }
@@ -268,6 +326,7 @@ object EntryRepository {
         val rawText: String,
         val status: String,
         val attempts: Int,
+        val projectId: UUID?,
     )
 
     /** Обработка удалась: снимаем ошибку и переводим запись в structured. */

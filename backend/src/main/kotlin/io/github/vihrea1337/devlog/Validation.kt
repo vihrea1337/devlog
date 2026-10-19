@@ -33,6 +33,13 @@ data class ValidEntryInput(
     val timeSpentMin: Int?,
     /** id от клиента (защита от дублей при повторной отправке); null — придумает сервер. */
     val id: UUID? = null,
+    /** Откуда запись (ссылка/отпечаток источника для импорта, см. ImportedEntries). */
+    val sourceRef: String? = null,
+    /**
+     * Начальный статус. null — решит репозиторий: "queued" (ждать ИИ) или "draft", если у
+     * проекта ИИ выключен. Импорт, который разбирает запись сам (файлы дня), ставит "draft".
+     */
+    val initialStatus: String? = null,
 )
 
 /** Что менять в записи. null = поле не трогаем; projectId = "" означает «убрать из проекта». */

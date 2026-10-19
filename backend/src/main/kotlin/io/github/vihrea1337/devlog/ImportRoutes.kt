@@ -12,6 +12,9 @@ import java.time.LocalDate
 /** Максимальный период за один импорт: у публичной активности GitHub всё равно ~90 дней. */
 private const val MAX_IMPORT_DAYS = 120L
 
+/** Режим «один репозиторий» лимита ленты не имеет — год за раз (до 1000 коммитов, см. MAX_REPO_PAGES). */
+private const val MAX_REPO_IMPORT_DAYS = 366L
+
 /**
  * Импорт коммитов с GitHub в записи дневника.
  *
@@ -27,13 +30,21 @@ fun Route.importRoutes() = authenticate("auth-jwt") {
         val to = parseDateOrNull(body.periodEnd)
             ?: return@post call.badRequest("Некорректная дата конца периода")
         if (to.isBefore(from)) return@post call.badRequest("Конец периода раньше начала")
-        if (java.time.temporal.ChronoUnit.DAYS.between(from, to) > MAX_IMPORT_DAYS) {
-            return@post call.badRequest("Слишком длинный период: максимум $MAX_IMPORT_DAYS дней за раз")
+
+        // Режим «один репозиторий» (см. GithubImporter.importRepo): коммиты берутся напрямую
+        // из репозитория, поэтому ограничения ленты событий (~90 дней) к нему не относятся.
+        val repo = body.repo?.takeIf { it.isNotBlank() }?.let {
+            GithubImporter.normalizeRepo(it)
+                ?: return@post call.badRequest("Репозиторий — в виде «владелец/имя» или ссылкой https://github.com/владелец/имя")
         }
-        if (from.isBefore(LocalDate.now().minusDays(MAX_IMPORT_DAYS))) {
+        val maxDays = if (repo != null) MAX_REPO_IMPORT_DAYS else MAX_IMPORT_DAYS
+        if (java.time.temporal.ChronoUnit.DAYS.between(from, to) > maxDays) {
+            return@post call.badRequest("Слишком длинный период: максимум $maxDays дней за раз")
+        }
+        if (repo == null && from.isBefore(LocalDate.now().minusDays(MAX_IMPORT_DAYS))) {
             return@post call.badRequest(
                 "GitHub отдаёт только недавнюю активность (Events API) — примерно за последние 90 дней, " +
-                    "даже с привязанным токеном",
+                    "даже с привязанным токеном. Для более старых коммитов укажите репозиторий",
             )
         }
 
@@ -50,7 +61,10 @@ fun Route.importRoutes() = authenticate("auth-jwt") {
         }
 
         val token = GithubTokenRepository.tokenFor(call.userId())
-        val result = runCatching { GithubImporter.import(call.userId(), login, from, to, projectId, token) }
+        val result = runCatching {
+            if (repo != null) GithubImporter.importRepo(call.userId(), login, repo, from, to, projectId, token)
+            else GithubImporter.import(call.userId(), login, from, to, projectId, token)
+        }
             .getOrElse { error ->
                 // Сюда попадают ответы GitHub «нет такого пользователя», «превышен лимит» и сбои сети.
                 call.application.environment.log.info("Импорт с GitHub не удался: ${error.message}")
@@ -60,7 +74,7 @@ fun Route.importRoutes() = authenticate("auth-jwt") {
                 )
             }
 
-        call.respond(ImportResultDto(result.days, result.commits, result.created, result.skipped, result.truncated))
+        call.respond(ImportResultDto(result.days, result.commits, result.created, result.skipped, result.truncated, result.updated))
     }
 
     /**
@@ -130,5 +144,25 @@ fun Route.importRoutes() = authenticate("auth-jwt") {
             )
         }
         call.respond(TextImportResultDto(result.days, result.linesMatched, result.created, result.skipped))
+    }
+
+    /**
+     * Импорт файлов дня (`ГГГГ-ММ-ДД.md` с разделами «Сделано», «Проверено», «Цифры»…) —
+     * см. DayFileImport.kt. Сразу несколько файлов (папка месяца); повторная загрузка того же
+     * дня обновляет запись, а не плодит вторую. Ответ — итог по каждому файлу.
+     */
+    post("/api/import/day-files") {
+        val body = call.receive<DayFilesImportRequest>()
+        if (body.files.isEmpty()) return@post call.badRequest("Не выбрано ни одного файла")
+        if (body.files.size > DayFileImporter.MAX_FILES) {
+            return@post call.badRequest("Не больше ${DayFileImporter.MAX_FILES} файлов за раз")
+        }
+        val projectId = body.projectId?.takeIf { it.isNotBlank() }?.let {
+            parseUuidOrNull(it) ?: return@post call.badRequest("Некорректный id проекта")
+        }
+        if (projectId != null && ProjectRepository.getById(call.userId(), projectId) == null) {
+            return@post call.badRequest("Проект не найден")
+        }
+        call.respond(DayFileImporter.import(call.userId(), body.files, projectId, body.overwrite))
     }
 }

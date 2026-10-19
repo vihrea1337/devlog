@@ -247,6 +247,10 @@
   .inline { display: flex; gap: 8px; align-items: end; flex-wrap: wrap; }
   .inline > .field { flex: 1 1 220px; }
   .status { font-size: 13px; color: var(--muted); }
+  .day-files-result { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; max-height: 260px; overflow-y: auto; font-size: 13px; }
+  .day-files-result li { padding: 6px 10px; border-radius: 8px; background: var(--card-2); }
+  .day-files-result li.warn { background: var(--warn-bg); color: var(--warn); }
+  .day-files-result:empty { display: none; }
   .proj-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
   .proj-row:last-of-type { border-bottom: 0; }
   .proj-export-form { padding: 12px; border: 1px solid var(--line); border-radius: 10px; display: grid; gap: 8px; }
@@ -425,6 +429,7 @@
         <button class="btn ghost sm ro-hide" data-open="gitlabPanel"><svg class="i"><use href="#i-git"/></svg>GitLab</button>
         <button class="btn ghost sm" data-open="projectPanel"><svg class="i"><use href="#i-folder"/></svg>Проекты</button>
         <button class="btn ghost sm ro-hide" data-open="textImportPanel"><svg class="i"><use href="#i-upload"/></svg>Импорт текста</button>
+        <button class="btn ghost sm ro-hide" data-open="dayFilesPanel"><svg class="i"><use href="#i-upload"/></svg>Файлы дня</button>
       </div>
 
       <div class="toolbar">
@@ -467,6 +472,7 @@
           <button class="action ro-hide" data-open="githubPanel"><span class="ico"><svg class="i"><use href="#i-git"/></svg></span><span><b>Импорт с GitHub</b><small>коммиты превратятся в записи</small></span></button>
           <button class="action ro-hide" data-open="gitlabPanel"><span class="ico"><svg class="i"><use href="#i-git"/></svg></span><span><b>Импорт с GitLab</b><small>по личному токену</small></span></button>
           <button class="action ro-hide" data-open="textImportPanel"><span class="ico"><svg class="i"><use href="#i-upload"/></svg></span><span><b>Импорт текста</b><small>лог с датами, выгрузка чата</small></span></button>
+          <button class="action ro-hide" data-open="dayFilesPanel"><span class="ico"><svg class="i"><use href="#i-upload"/></svg></span><span><b>Файлы дня</b><small>ГГГГ-ММ-ДД.md — папка месяца разом</small></span></button>
           <button class="action" data-open="projectPanel"><span class="ico"><svg class="i"><use href="#i-folder"/></svg></span><span><b>Проекты</b><small>группы записей и выключатель ИИ</small></span></button>
         </div>
       </div>
@@ -492,7 +498,7 @@
   <!-- Импорт с GitHub -->
   <div id="githubPanel" class="card panel hidden" role="dialog" aria-modal="true" aria-label="Импорт с GitHub">
     <div class="panel-head"><b>Импорт коммитов с GitHub</b><button class="btn ghost icon" id="githubClose" title="Закрыть"><svg class="i"><use href="#i-x"/></svg></button></div>
-    <p class="desc">Коммиты за день превращаются в одну запись — дальше её разбирает ИИ, как обычную заметку. Без токена видна только публичная активность за последние ~90 дней.</p>
+    <p class="desc">Коммиты за день превращаются в одну запись — дальше её разбирает ИИ, как обычную заметку. Без токена видна только публичная активность за последние ~90 дней. Укажите репозиторий — и коммиты возьмутся прямо из него, без лимита 90 дней (для чужого приватного репозитория нужен классический токен с правом <code>repo</code>). Повторный импорт допишет в день новые коммиты.</p>
     <div class="inline">
       <label class="field"><span>Логин на GitHub</span><input id="githubLogin" placeholder="например, vihrea1337"></label>
       <button class="btn ghost" id="githubSave">Сохранить</button>
@@ -507,6 +513,7 @@
       <label class="field"><span>С какого дня</span><input id="importFrom" type="date"></label>
       <label class="field"><span>По какой день</span><input id="importTo" type="date"></label>
     </div>
+    <label class="field"><span>Репозиторий (необязательно): владелец/имя или ссылка</span><input id="importRepo" placeholder="например, vihrea1337/devlog"></label>
     <div class="inline"><button class="btn primary" id="importBtn">Импортировать</button><span class="status" id="importStatus"></span></div>
   </div>
 
@@ -535,10 +542,24 @@
     <div class="inline"><button class="btn primary" id="textImportSubmit">Импортировать</button><span class="status" id="textImportStatus"></span></div>
   </div>
 
+  <!-- Импорт файлов дня -->
+  <div id="dayFilesPanel" class="card panel hidden" role="dialog" aria-modal="true" aria-label="Файлы дня">
+    <div class="panel-head"><b>Файлы дня</b><button class="btn ghost icon" id="dayFilesClose" title="Закрыть"><svg class="i"><use href="#i-x"/></svg></button></div>
+    <p class="desc">Записи вида <code>2026-10-19.md</code> с разделами «Сделано», «Проверено», «Нехватки», «Не делалось», «Цифры». Дата берётся из имени файла, один файл — одна запись. Разделы разбирает код, а не ИИ: текст никуда не отправляется. Файл дописали — загрузите снова, запись обновится.</p>
+    <p class="desc" id="dayFilesProject"></p>
+    <div class="inline">
+      <label class="btn ghost" style="cursor:pointer;"><input type="file" id="dayFilesPick" multiple accept=".md,.txt,.markdown" style="display:none;">Выбрать файлы</label>
+      <label class="btn ghost" style="cursor:pointer;"><input type="file" id="dayFilesFolder" webkitdirectory style="display:none;">Выбрать папку</label>
+      <label style="display:flex; align-items:center; gap:6px; cursor:pointer;" title="Заменить файлом и записи, которые правили в DevLog или удалили"><input type="checkbox" id="dayFilesOverwrite" style="width:auto;"> Перезаписать правленые</label>
+    </div>
+    <span class="status" id="dayFilesStatus"></span>
+    <ul id="dayFilesResult" class="day-files-result"></ul>
+  </div>
+
   <!-- Отчёты -->
   <div id="reportPanel" class="card panel hidden" role="dialog" aria-modal="true" aria-label="Отчёты" style="width:min(860px, calc(100vw - 32px));">
     <div class="panel-head"><b>Отчёт за период</b><button class="btn ghost icon" id="reportClose" title="Закрыть"><svg class="i"><use href="#i-x"/></svg></button></div>
-    <p class="desc">ИИ пишет текст по темам: результаты, решения, проблемы. Цифры и хронологию считает код. Перед отправкой отчёт можно поправить.</p>
+    <p class="desc">ИИ пишет текст по темам: результаты, решения, проблемы. Цифры и хронологию считает код. «Работодателю» — разделы как в файлах дня (сделано, проверено, передано другим, не сделано), цифры месяца складываются из записей. Перед отправкой отчёт можно поправить.</p>
     <div class="ro-hide" style="display:grid; gap:10px;">
       <div class="chips">
         <button class="chip period-btn" data-period="week">Эта неделя</button>
@@ -548,6 +569,10 @@
       <div class="row2">
         <label class="field"><span>С какого дня</span><input id="reportFrom" type="date"></label>
         <label class="field"><span>По какой день</span><input id="reportTo" type="date"></label>
+      </div>
+      <div class="inline">
+        <label class="field"><span>Вид отчёта</span><select id="reportTemplate"><option value="default">По темам</option><option value="employer">Работодателю</option></select></label>
+        <label style="display:flex; align-items:center; gap:6px; cursor:pointer; padding-bottom:10px;" title="Месяц собирается из уже вычитанных недельных отчётов — точнее и влезает в лимит ИИ"><input type="checkbox" id="reportFromWeekly" style="width:auto;"> Из недельных отчётов</label>
       </div>
       <div class="inline"><button class="btn primary" id="reportBuild"><svg class="i"><use href="#i-sparkle"/></svg>Собрать отчёт</button><span class="status" id="reportStatus"></span></div>
       <div class="gen-progress hidden" id="genProgress"><div class="step"><span class="spinner"></span><span id="genStep">Читаю записи за период…</span></div></div>
@@ -854,17 +879,23 @@
       + (p.aiEnabled ? '' : '<span class="lock">ИИ выкл.</span>');
   }
 
-  function structuredHtml(s) {
+  // Файл дня разобран кодом по его же разделам: «проблемы» там — нехватки, «итог» — цифры.
+  function structuredHtml(s, dayFile) {
     if (!s) return '';
     const list = (title, arr) => (arr && arr.length)
       ? `<div><h4>${title}</h4><ul>${arr.map(x => `<li>${esc(x)}</li>`).join('')}</ul></div>` : '';
     return `<div class="struct">
       ${list('Сделано', s.steps)}
       ${list('Решения', s.decisions)}
-      ${list('Проблемы', s.problems)}
-      ${s.outcome ? `<div><h4>Итог</h4><p>${esc(s.outcome)}</p></div>` : ''}
+      ${list(dayFile ? 'Нехватки и передано' : 'Проблемы', s.problems)}
+      ${s.outcome ? `<div><h4>${dayFile ? 'Цифры' : 'Итог'}</h4><p>${esc(s.outcome)}</p></div>` : ''}
     </div>`;
   }
+
+  /** Текст записи для карточки: у файла дня убираем строки-заголовки Markdown («# …», «## Сделано»). */
+  const rawForCard = e => e.source === 'day-file'
+    ? e.rawText.split('\n').filter(l => !/^#{1,6}\s/.test(l.trim())).join('\n').replace(/\n{3,}/g, '\n\n').trim()
+    : e.rawText;
 
   function entryHtml(e) {
     const [label, cls] = statusOf(e);
@@ -885,9 +916,9 @@
         <span class="badge ${cls}">${label}</span>
       </div>
       ${hasAi ? `<p class="summary">${esc(s.summary)}</p>` : ''}
-      <p class="raw${long ? ' long' : ''}">${esc(e.rawText)}</p>
+      <p class="raw${long ? ' long' : ''}">${esc(rawForCard(e))}</p>
       ${errHtml}
-      ${structuredHtml(s)}
+      ${structuredHtml(s, e.source === 'day-file')}
       <div class="entry-foot">
         <div class="tags">${tags}</div>
         ${canOpen ? `<button class="link-btn act-toggle">Подробнее ${icon('chev')}</button>` : ''}
@@ -1280,7 +1311,7 @@
   }
 
   // --- Модальные панели (проекты, импорт, отчёты) ---
-  const PANELS = ['projectPanel', 'githubPanel', 'gitlabPanel', 'textImportPanel', 'reportPanel'];
+  const PANELS = ['projectPanel', 'githubPanel', 'gitlabPanel', 'textImportPanel', 'dayFilesPanel', 'reportPanel'];
   const PANEL_OPENERS = {
     githubPanel: () => {
       if (!$('importFrom').value) {
@@ -1298,6 +1329,12 @@
       if (!$('reportFrom').value) setPeriod('month');
       loadReportHistory();
     },
+    dayFilesPanel: () => {
+      const sel = $('feedFilter');
+      $('dayFilesProject').innerHTML = sel.value
+        ? 'Записи лягут в проект <b>' + esc(sel.options[sel.selectedIndex].text) + '</b> (выбран в фильтре ленты).'
+        : 'Записи лягут без проекта. Чтобы положить их в проект, выберите его в фильтре ленты.';
+    },
   };
   function openPanel(id) {
     PANELS.forEach(p => $(p).classList.toggle('hidden', p !== id));
@@ -1313,7 +1350,7 @@
   document.querySelectorAll('[data-open]').forEach(b => { b.onclick = () => openPanel(b.dataset.open); });
   $('backdrop').onclick = closePanels;
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('backdrop').classList.contains('hidden')) closePanels(); });
-  ['projectClose', 'githubClose', 'gitlabClose', 'textImportClose', 'reportClose'].forEach(id => { $(id).onclick = closePanels; });
+  ['projectClose', 'githubClose', 'gitlabClose', 'textImportClose', 'dayFilesClose', 'reportClose'].forEach(id => { $(id).onclick = closePanels; });
 
   // --- Проекты ---
   function fillProjectSelects() {
@@ -1434,7 +1471,8 @@
 
   function importSummary(data, provider) {
     return (data.commits
-      ? `Коммитов: ${data.commits}, новых записей: ${data.created}` + (data.skipped ? `, уже были: ${data.skipped}` : '')
+      ? `Коммитов: ${data.commits}, новых записей: ${data.created}` + (data.updated ? `, дополнено: ${data.updated}` : '') +
+        (data.skipped ? `, без изменений: ${data.skipped}` : '')
       : 'За этот период коммитов не нашлось') +
       (data.truncated ? ` (упёрлись в лимит запросов к ${provider} — часть пушей не проверена, попробуйте период короче)` : '');
   }
@@ -1445,7 +1483,10 @@
     try {
       const res = await api('/api/import/github', {
         method: 'POST',
-        body: { periodStart: $('importFrom').value, periodEnd: $('importTo').value, projectId: $('feedFilter').value || null },
+        body: {
+          periodStart: $('importFrom').value, periodEnd: $('importTo').value,
+          projectId: $('feedFilter').value || null, repo: $('importRepo').value.trim() || null,
+        },
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) { $('importStatus').textContent = data.error || 'Не вышло (' + res.status + ')'; return; }
@@ -1510,8 +1551,55 @@
     }
   };
 
+  // --- Импорт файлов дня (ГГГГ-ММ-ДД.md с разделами; разбирает код, без ИИ) ---
+  const DAY_FILE_STATUS = {
+    created: 'новая запись', updated: 'обновлена', unchanged: 'без изменений',
+    edited: 'правили в DevLog — не тронута', deleted: 'удалена в DevLog — не восстановлена', error: 'ошибка',
+  };
+
+  async function importDayFiles(fileList) {
+    // Из папки берём только текстовые файлы; в выборе файлов — всё, что выбрали.
+    const files = Array.from(fileList).filter(f => /\.(md|txt|markdown)$/i.test(f.name)).sort((a, b) => a.name.localeCompare(b.name));
+    if (!files.length) { $('dayFilesStatus').textContent = 'Нет файлов .md или .txt'; return; }
+    if (files.length > 100) { $('dayFilesStatus').textContent = 'Не больше 100 файлов за раз'; return; }
+    $('dayFilesStatus').textContent = 'Читаю ' + files.length + ' файл(ов)…';
+    $('dayFilesResult').innerHTML = '';
+    const payload = await Promise.all(files.map(async f => ({ name: f.name, text: await f.text() })));
+    const res = await api('/api/import/day-files', {
+      method: 'POST',
+      body: { files: payload, projectId: $('feedFilter').value || null, overwrite: $('dayFilesOverwrite').checked },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { $('dayFilesStatus').textContent = data.error || 'Не вышло (' + res.status + ')'; return; }
+    $('dayFilesStatus').textContent = `Новых: ${data.created}, обновлено: ${data.updated}, без изменений: ${data.unchanged}` +
+      (data.failed ? `, с ошибкой: ${data.failed}` : '');
+    $('dayFilesResult').innerHTML = data.files.map(f =>
+      `<li class="${f.status === 'error' || f.status === 'edited' || f.status === 'deleted' ? 'warn' : ''}"><b>${esc(f.name)}</b> — ${esc(DAY_FILE_STATUS[f.status] || f.status)}` +
+      (f.status !== 'error' && !f.parsedByCode ? ' · разделов нет, разберёт ИИ' : '') +
+      (f.message ? `<br><small>${esc(f.message)}</small>` : '') + '</li>').join('');
+    loadEntries(); loadStats(); loadWeek();
+  }
+  ['dayFilesPick', 'dayFilesFolder'].forEach(id => {
+    $(id).onchange = async (e) => {
+      try { await importDayFiles(e.target.files); } finally { e.target.value = ''; }
+    };
+  });
+
   // --- Отчёты ---
   let currentReport = null;
+
+  // Вид отчёта и «из недельных» запоминаем в браузере — это удобство, не данные: без
+  // хранилища (приватное окно) просто всегда начинаем с «по темам».
+  try {
+    const saved = JSON.parse(localStorage.getItem('devlog.reportOptions') || '{}');
+    if (saved.template) $('reportTemplate').value = saved.template;
+    $('reportFromWeekly').checked = !!saved.fromWeekly;
+  } catch (e) { /* хранилище недоступно — оставляем по умолчанию */ }
+  ['reportTemplate', 'reportFromWeekly'].forEach(id => $(id).addEventListener('change', () => {
+    try {
+      localStorage.setItem('devlog.reportOptions', JSON.stringify({ template: $('reportTemplate').value, fromWeekly: $('reportFromWeekly').checked }));
+    } catch (e) { /* не страшно */ }
+  }));
 
   /** Быстрый выбор периода: эта неделя / этот месяц / прошлый месяц. */
   function setPeriod(kind) {
@@ -1584,7 +1672,10 @@
     try {
       const res = await api('/api/reports', {
         method: 'POST',
-        body: { periodStart: from, periodEnd: to, projectId: $('feedFilter').value || null },
+        body: {
+          periodStart: from, periodEnd: to, projectId: $('feedFilter').value || null,
+          template: $('reportTemplate').value, fromWeeklyReports: $('reportFromWeekly').checked,
+        },
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) { $('reportStatus').textContent = data.error || 'Не вышло (' + res.status + ')'; return; }
