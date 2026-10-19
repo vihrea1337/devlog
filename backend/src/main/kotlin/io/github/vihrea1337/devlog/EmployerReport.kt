@@ -347,6 +347,20 @@ object EmployerReport {
         return text.ifEmpty { null }
     }
 
+    /**
+     * Выровнять текст от ИИ: модель иногда пишет пункты разделов без маркера списка
+     * («**Тема** – …» отдельной строкой), и они слипаются в абзацы. В разделах кроме «Кратко»
+     * такая строка становится пунктом «- **Тема** — …».
+     */
+    fun polishAi(md: String): String {
+        var section = ""
+        return md.lines().joinToString("\n") { line ->
+            val t = line.trim()
+            if (t.startsWith("#")) section = t.trimStart('#').trim().lowercase()
+            if (!section.startsWith("кратко") && line.startsWith("**")) "- $line" else line
+        }
+    }
+
     /** Подпись в конце: откуда взялись разделы, а откуда цифры. */
     const val FOOTER =
         "_Разделы составлены по записям дня и коммитам за период. Цифры и хронология посчитаны автоматически по тем же записям._"

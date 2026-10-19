@@ -138,6 +138,15 @@ class AutomationTest {
         assertNull(EmployerReport.briefOf("## Сделано\n- x"))
     }
 
+    @Test
+    fun `пункты ИИ без маркера списка становятся пунктами, «Кратко» не трогается`() {
+        val md = "## Кратко\n**Жирное** вступление.\n\n## Сделано\n**Уведомления** – готовы.\n- **Виджет** — готов."
+        assertEquals(
+            "## Кратко\n**Жирное** вступление.\n\n## Сделано\n- **Уведомления** – готовы.\n- **Виджет** — готов.",
+            EmployerReport.polishAi(md),
+        )
+    }
+
     // --- Через HTTP ---
 
     private fun dayFile(date: String, done: String) = """

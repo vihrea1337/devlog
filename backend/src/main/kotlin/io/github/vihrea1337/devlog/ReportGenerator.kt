@@ -42,6 +42,10 @@ object ReportGenerator {
     var aiWriter: suspend (userId: UUID, digest: String, employer: Boolean) -> String? =
         { userId, digest, employer -> AiProcessor.writeReport(userId, digest, employer) }
 
+    /** Запрос к ИИ + выравнивание ответа под шаблон (см. EmployerReport.polishAi). */
+    private suspend fun writeAi(userId: UUID, digest: String, employer: Boolean): String? =
+        aiWriter(userId, digest, employer)?.let { if (employer) EmployerReport.polishAi(it) else it }
+
     suspend fun generate(
         userId: UUID,
         title: String,
@@ -58,7 +62,7 @@ object ReportGenerator {
         if (ctx.entries.isEmpty() && weekly.isEmpty()) return ctx.build(title, employer, null)
         if (weekly.isEmpty()) {
             val forAi = ctx.forAi(ctx.entries)
-            val aiBody = if (forAi.isNotEmpty()) aiWriter(userId, ctx.digest(forAi, employer), employer) else null
+            val aiBody = if (forAi.isNotEmpty()) writeAi(userId, ctx.digest(forAi, employer), employer) else null
             return ctx.build(title, employer, aiBody)
         }
         return fromWeekly(userId, title, projectId, employer, ctx, weekly)
@@ -111,7 +115,7 @@ object ReportGenerator {
         else ctx.projects.values.none { !it.aiEnabled }
         val aiBody = if (weeklySafeForAi) {
             val uncoveredForAi = ctx.forAi(uncovered)
-            aiWriter(userId, weeklyDigest(weekly, uncoveredForAi.takeIf { it.isNotEmpty() }?.let { ctx.digest(it, employer) }), employer)
+            writeAi(userId, weeklyDigest(weekly, uncoveredForAi.takeIf { it.isNotEmpty() }?.let { ctx.digest(it, employer) }), employer)
         } else {
             null
         }
@@ -149,7 +153,7 @@ object ReportGenerator {
             val forAi = ctx.forAi(days)
             val aiBody = if (forAi.isNotEmpty()) {
                 if (aiCalls++ > 0) aiPause()
-                aiWriter(userId, EmployerReport.digest(forAi, ctx.projects), true)
+                writeAi(userId, EmployerReport.digest(forAi, ctx.projects), true)
             } else {
                 null
             }
