@@ -20,7 +20,9 @@ private val GITHUB_LOGIN = Regex("^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0
 
 /** id текущего пользователя из проверенного JWT (claim "userId"). */
 fun ApplicationCall.userId(): UUID =
-    UUID.fromString(principal<JWTPrincipal>()!!.payload.getClaim("userId").asString())
+    principal<JWTPrincipal>()?.let { UUID.fromString(it.payload.getClaim("userId").asString()) }
+        // Вход по токену скрипта (только ручки импорта, см. ImportTokens.kt).
+        ?: principal<ImportTokenPrincipal>()!!.userId
 
 /** Ручки авторизации: регистрация, вход, "кто я". */
 fun Route.authRoutes() {

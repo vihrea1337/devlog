@@ -52,7 +52,9 @@ fun migrateSchema(dataSource: DataSource) {
         .load()
         .migrate()
     println(
-        if (result.migrationsExecuted == 0) "Схема БД актуальна (версия ${result.targetSchemaVersion ?: "1"})."
+        // Когда миграций нет, targetSchemaVersion пуст — текущая версия лежит в initialSchemaVersion
+        // (раньше здесь подставлялась «1», и лог на актуальной базе V8 честно врал «версия 1»).
+        if (result.migrationsExecuted == 0) "Схема БД актуальна (версия ${result.targetSchemaVersion ?: result.initialSchemaVersion ?: "—"})."
         else "Применено миграций: ${result.migrationsExecuted}, схема БД версии ${result.targetSchemaVersion}.",
     )
 }

@@ -22,7 +22,13 @@ private const val MAX_REPO_IMPORT_DAYS = 366L
  * Коммиты за день собираются в одну запись, дальше её разбирает ИИ ровно так же,
  * как заметку, написанную руками.
  */
-fun Route.importRoutes() = authenticate("auth-jwt") {
+fun Route.importRoutes() {
+    commitImportRoutes()
+    textImportRoutes()
+}
+
+/** Импорт коммитов (GitHub, GitLab) — только под обычным входом. */
+private fun Route.commitImportRoutes() = authenticate("auth-jwt") {
     post("/api/import/github") {
         val body = call.receive<GithubImportRequest>()
         val from = parseDateOrNull(body.periodStart)
@@ -115,7 +121,14 @@ fun Route.importRoutes() = authenticate("auth-jwt") {
 
         call.respond(ImportResultDto(result.days, result.commits, result.created, result.skipped, result.truncated))
     }
+}
 
+/**
+ * Импорт текста и файлов дня — под обычным входом ИЛИ под токеном скрипта (ImportTokens.kt):
+ * их отправляет автоимпорт с ПК. Ручки только добавляют/обновляют записи — ничего не отдают
+ * наружу, кроме итога импорта, поэтому токену скрипта сюда можно.
+ */
+private fun Route.textImportRoutes() = authenticate("auth-jwt", "import-token") {
     /**
      * Импорт произвольного текстового логa (в т.ч. выгрузки/транскрипта Claude Code) —
      * см. `docs/architecture.md` за обоснованием, почему формат общий, а не заточенный

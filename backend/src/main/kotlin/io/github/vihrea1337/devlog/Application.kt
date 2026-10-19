@@ -5,6 +5,7 @@ import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.application.Application
 import io.ktor.server.application.install
 import io.ktor.server.auth.Authentication
+import io.ktor.server.auth.bearer
 import io.ktor.server.auth.jwt.JWTPrincipal
 import io.ktor.server.auth.jwt.jwt
 import io.ktor.server.engine.embeddedServer
@@ -86,6 +87,12 @@ fun Application.module() {
                 }
             }
         }
+        // Токен скрипта (см. ImportTokens.kt) — тот же заголовок "Authorization: Bearer …",
+        // но подключён ТОЛЬКО к ручкам импорта: читать и удалять им ничего нельзя.
+        bearer("import-token") {
+            realm = "DevLog"
+            authenticate { credential -> ImportTokenRepository.userFor(credential.token)?.let(::ImportTokenPrincipal) }
+        }
     }
 
     // Демо-вход «только для чтения»: изменения с таким токеном отклоняются (см. DemoAccess.kt).
@@ -112,6 +119,8 @@ fun Application.module() {
         eventRoutes()
         // Импорт коммитов с GitHub как сырья для дневника.
         importRoutes()
+        // Токены для скриптов (автоимпорт файлов дня без входа паролем).
+        importTokenRoutes()
         // Веб-страница из resources/static (index.html). Данные за ней всё равно под токеном.
         staticResources("/", "static")
     }

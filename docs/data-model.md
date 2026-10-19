@@ -53,8 +53,8 @@ _Позже (Фаза 4): `plan`, `ai_quota_used` для тарифов и ли�
 | project_id | uuid FK→projects, NULL | запись может быть вне проекта |
 | occurred_on | date | за какой день работа (не дата создания!) |
 | raw_text | text | сырой текст как ввели/импортировали |
-| source | varchar(20) | `manual` \| `github` \| `claude` \| `import` |
-| source_ref | varchar(500), NULL | ссылка на коммит/URL источника |
+| source | varchar(20) | `manual` \| `github` \| `gitlab` \| `text-import` \| `day-file` |
+| source_ref | varchar(500), NULL | у импорта — «источник#отпечаток текста» (`day-file:2026-10-19.md#…`): по нему повторный импорт отличает нетронутую запись от правленой руками (см. `ImportedEntries.kt`) |
 | status | varchar(20) | `draft` \| `queued` \| `processing` \| `structured` \| `failed` |
 | time_spent_min | int, NULL | потрачено минут (опционально) |
 | created_at | timestamp | |
@@ -135,9 +135,22 @@ _Последние три колонки — очередь обработки 
 Две специализированные таблицы дешевле для двух провайдеров; вернуться к обобщённой схеме
 имеет смысл при третьем провайдере, если он тоже будет "просто токен, без своих полей".
 
+## import_tokens — токены для скриптов (V9, 2026-10-19)
+| колонка | тип | заметки |
+|---|---|---|
+| id | uuid PK | |
+| user_id | uuid FK→users, ON DELETE CASCADE | владелец |
+| name | varchar(60) | «Домашний ПК» — чтобы понять, какой отзывать |
+| token_hash | varchar(64) UNIQUE | SHA-256 токена; сам токен не храним, показываем один раз |
+| created_at | timestamp | |
+| last_used_at | timestamp, NULL | обновляется не чаще раза в минуту |
+
+Токен (`dli_…`, 32 случайных байта) пускает только в `/api/import/day-files` и
+`/api/import/text` — для автоимпорта с ПК (`tools/push-day-files.mjs`, см. `docs/auto-import.md`).
+
 ## Связи
 - `users 1—∞ projects`, `users 1—∞ entries`, `users 1—∞ reports`, `users 1—1 github_integrations`,
-  `users 1—1 gitlab_integrations`
+  `users 1—1 gitlab_integrations`, `users 1—∞ import_tokens`
 - `projects 1—∞ entries` (или запись без проекта)
 - `entries 1—1 entry_structured`
 

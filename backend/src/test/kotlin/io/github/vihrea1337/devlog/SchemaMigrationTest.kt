@@ -20,7 +20,7 @@ import kotlin.test.assertTrue
  */
 class SchemaMigrationTest {
 
-    private val tables = arrayOf(Users, GithubIntegrations, GitlabIntegrations, Projects, Entries, EntryStructured, Reports)
+    private val tables = arrayOf(Users, GithubIntegrations, GitlabIntegrations, ImportTokens, Projects, Entries, EntryStructured, Reports)
 
     @BeforeTest
     fun setup() {
@@ -30,7 +30,7 @@ class SchemaMigrationTest {
 
     @AfterTest
     fun teardown() {
-        transaction { SchemaUtils.drop(Reports, EntryStructured, Entries, Projects, GitlabIntegrations, GithubIntegrations, Users) }
+        transaction { SchemaUtils.drop(Reports, EntryStructured, Entries, Projects, ImportTokens, GitlabIntegrations, GithubIntegrations, Users) }
     }
 
     @Test

@@ -58,6 +58,24 @@ object GitlabIntegrations : Table("gitlab_integrations") {
     override val primaryKey = PrimaryKey(userId)
 }
 
+/**
+ * Токены для скриптов (см. ImportTokens.kt, миграция V9): умеют только импорт. Хранится хеш,
+ * сам токен показывается один раз при выдаче.
+ */
+object ImportTokens : Table("import_tokens") {
+    val id = uuid("id")
+    val userId = reference("user_id", Users.id, onDelete = ReferenceOption.CASCADE)
+    val name = varchar("name", 60)
+    val tokenHash = varchar("token_hash", 64).uniqueIndex()
+    val createdAt = timestamp("created_at")
+    val lastUsedAt = timestamp("last_used_at").nullable()
+    override val primaryKey = PrimaryKey(id)
+
+    init {
+        index(false, userId)
+    }
+}
+
 /** Проекты — группировка записей. У проекта есть выключатель ИИ (приватность). */
 object Projects : Table("projects") {
     val id = uuid("id")

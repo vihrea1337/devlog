@@ -251,6 +251,13 @@
   .day-files-result li { padding: 6px 10px; border-radius: 8px; background: var(--card-2); }
   .day-files-result li.warn { background: var(--warn-bg); color: var(--warn); }
   .day-files-result:empty { display: none; }
+  .tokens-box { border-top: 1px solid var(--line); padding-top: 10px; }
+  .tokens-box summary { cursor: pointer; font-weight: 600; font-size: 14px; }
+  .tokens-box[open] { display: grid; gap: 10px; }
+  .token-new { display: grid; gap: 6px; font-size: 13px; color: var(--warn); }
+  .token-new input { font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
+  .day-files-result li .grow { flex: 1; }
+  .token-row { display: flex; align-items: center; gap: 8px; }
   .proj-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
   .proj-row:last-of-type { border-bottom: 0; }
   .proj-export-form { padding: 12px; border: 1px solid var(--line); border-radius: 10px; display: grid; gap: 8px; }
@@ -554,6 +561,20 @@
     </div>
     <span class="status" id="dayFilesStatus"></span>
     <ul id="dayFilesResult" class="day-files-result"></ul>
+    <details class="tokens-box">
+      <summary>Токен для скриптов — автоимпорт с ПК</summary>
+      <p class="desc">Скрипт <code>tools/push-day-files.mjs</code> из репозитория DevLog сам отправляет новые и дописанные файлы — запускайте его Планировщиком заданий или хуком. Токен умеет только импорт: читать и удалять записи им нельзя. Показывается один раз; потерялся — отзовите и выпустите новый.</p>
+      <div class="inline">
+        <label class="field"><span>Где будет работать</span><input id="importTokenName" maxlength="60" placeholder="например, Домашний ПК"></label>
+        <button class="btn ghost" id="importTokenCreate">Выпустить</button>
+      </div>
+      <div id="importTokenNew" class="hidden token-new">
+        <span>Скопируйте сейчас — больше его не покажем:</span>
+        <input id="importTokenValue" readonly>
+      </div>
+      <span class="status" id="importTokenStatus"></span>
+      <ul id="importTokenList" class="day-files-result"></ul>
+    </details>
   </div>
 
   <!-- Отчёты -->
@@ -1579,6 +1600,38 @@
       (f.message ? `<br><small>${esc(f.message)}</small>` : '') + '</li>').join('');
     loadEntries(); loadStats(); loadWeek();
   }
+  // --- Токены для скриптов (только импорт) ---
+  async function loadImportTokens() {
+    const res = await api('/api/me/import-tokens');
+    if (!res.ok) { $('importTokenList').innerHTML = ''; return; }
+    const list = await res.json();
+    $('importTokenList').innerHTML = list.map(t => `<li class="token-row"><span class="grow"><b>${esc(t.name)}</b><br><small>выпущен ${esc(humanDate(t.createdAt.slice(0, 10)))}` +
+      (t.lastUsedAt ? `, последний раз — ${esc(humanDate(t.lastUsedAt.slice(0, 10)))}` : ', ещё не использовался') +
+      `</small></span><button class="btn ghost sm ro-hide" data-revoke="${esc(t.id)}">Отозвать</button></li>`).join('');
+    $('importTokenList').querySelectorAll('[data-revoke]').forEach(b => {
+      b.onclick = async () => {
+        if (!confirm('Отозвать токен? Скрипты с ним перестанут работать.')) return;
+        await api('/api/me/import-tokens/' + b.dataset.revoke, { method: 'DELETE' });
+        $('importTokenNew').classList.add('hidden');
+        loadImportTokens();
+      };
+    });
+  }
+  $('importTokenCreate').onclick = async () => {
+    const name = $('importTokenName').value.trim();
+    if (!name) { $('importTokenStatus').textContent = 'Назовите токен — так потом понятно, какой отзывать'; return; }
+    const res = await api('/api/me/import-tokens', { method: 'POST', body: { name } });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { $('importTokenStatus').textContent = data.error || 'Не вышло (' + res.status + ')'; return; }
+    $('importTokenStatus').textContent = '';
+    $('importTokenName').value = '';
+    $('importTokenValue').value = data.token;
+    $('importTokenNew').classList.remove('hidden');
+    $('importTokenValue').select();
+    loadImportTokens();
+  };
+  document.querySelector('.tokens-box').addEventListener('toggle', e => { if (e.target.open) loadImportTokens(); });
+
   ['dayFilesPick', 'dayFilesFolder'].forEach(id => {
     $(id).onchange = async (e) => {
       try { await importDayFiles(e.target.files); } finally { e.target.value = ''; }

@@ -362,6 +362,26 @@ data class TextImportResultDto(
     val skipped: Int,
 )
 
+// --- Токены для скриптов: долгий ключ, который умеет только импорт ---
+
+/** Тело POST /api/me/import-tokens: имя, чтобы потом понять, какой токен отзывать. */
+@Serializable
+data class NewImportTokenRequest(val name: String)
+
+/** Токен в списке — без самого значения (его сервер не хранит). */
+@Serializable
+data class ImportTokenDto(
+    val id: String,
+    val name: String,
+    val createdAt: String,
+    /** Когда им последний раз пользовались (с точностью до минуты); null — ни разу. */
+    val lastUsedAt: String? = null,
+)
+
+/** Ответ на выпуск: сам токен — ЕДИНСТВЕННЫЙ раз, дальше его не увидеть. */
+@Serializable
+data class CreatedImportTokenDto(val token: String, val info: ImportTokenDto)
+
 // --- Экспорт отчёта в GitHub (обратная сторона импорта коммитов) ---
 
 /** Ответ POST /api/reports/{id}/export-github: куда именно записали. */
