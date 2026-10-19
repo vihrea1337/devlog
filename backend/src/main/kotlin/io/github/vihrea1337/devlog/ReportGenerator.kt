@@ -52,40 +52,131 @@ object ReportGenerator {
         fromWeeklyReports: Boolean = false,
     ): String {
         val employer = template == TEMPLATE_EMPLOYER
-        val entries = EntryRepository.list(userId, from, to, projectId).sortedBy { it.occurredOn }
-        val projects = ProjectRepository.list(userId).associateBy { it.id }
+        val ctx = load(userId, from, to, projectId)
         val weekly = if (fromWeeklyReports) pickWeekly(ReportRepository.list(userId), from, to, projectId) else emptyList()
 
-        fun build(body: String?) =
-            if (employer) EmployerReport.buildMarkdown(title, from, to, entries, projects, body)
-            else buildMarkdown(title, from, to, entries, projects, body)
-
-        if (entries.isEmpty() && weekly.isEmpty()) return build(null)
-
-        val forAi = entries.filter { e -> e.projectId?.let { projects[it]?.aiEnabled } ?: true }
-        fun entriesDigest(list: List<EntryDto>) = if (employer) EmployerReport.digest(list, projects) else digest(list, projects)
-
+        if (ctx.entries.isEmpty() && weekly.isEmpty()) return ctx.build(title, employer, null)
         if (weekly.isEmpty()) {
-            val aiBody = if (forAi.isNotEmpty()) aiWriter(userId, entriesDigest(forAi), employer) else null
-            return build(aiBody)
+            val forAi = ctx.forAi(ctx.entries)
+            val aiBody = if (forAi.isNotEmpty()) aiWriter(userId, ctx.digest(forAi, employer), employer) else null
+            return ctx.build(title, employer, aiBody)
         }
+        return fromWeekly(userId, title, projectId, employer, ctx, weekly)
+    }
 
-        // Сборка из недельных отчётов. Дни, которые они не покрыли, добавляем из записей.
+    /** Всё, что нужно для сборки: записи периода, проекты, имя автора. */
+    private class Context(
+        val from: LocalDate,
+        val to: LocalDate,
+        val entries: List<EntryDto>,
+        val projects: Map<String, ProjectDto>,
+        val author: String?,
+    ) {
+        /** Записи, текст которых можно отдать во внешний ИИ (проект с включённым ИИ или без проекта). */
+        fun forAi(list: List<EntryDto>) = list.filter { e -> e.projectId?.let { projects[it]?.aiEnabled } ?: true }
+
+        fun digest(list: List<EntryDto>, employer: Boolean) =
+            if (employer) EmployerReport.digest(list, projects) else ReportGenerator.digest(list, projects)
+
+        fun fallback(list: List<EntryDto>, employer: Boolean) =
+            if (employer) EmployerReport.fallbackBody(list) else fallbackBody(list)
+
+        fun build(title: String, employer: Boolean, body: String?, weeks: List<WeeklySource> = emptyList()) =
+            if (employer) EmployerReport.buildMarkdown(title, from, to, entries, projects, body, author, weeks)
+            else buildMarkdown(title, from, to, entries, projects, body)
+    }
+
+    private fun load(userId: UUID, from: LocalDate, to: LocalDate, projectId: UUID?) = Context(
+        from = from,
+        to = to,
+        entries = EntryRepository.list(userId, from, to, projectId).sortedBy { it.occurredOn },
+        projects = ProjectRepository.list(userId).associateBy { it.id },
+        author = UserRepository.findById(userId)?.displayName?.takeIf { it.isNotBlank() },
+    )
+
+    /** Сборка из недельных отчётов. Дни, которые они не покрыли, добавляем из записей. */
+    private suspend fun fromWeekly(
+        userId: UUID,
+        title: String,
+        projectId: UUID?,
+        employer: Boolean,
+        ctx: Context,
+        weekly: List<WeeklySource>,
+    ): String {
         val covered = weekly.flatMap { w -> generateSequence(w.from) { it.plusDays(1) }.takeWhile { it <= w.to }.toList() }.toSet()
-        val uncovered = entries.filter { LocalDate.parse(it.occurredOn) !in covered }
+        val uncovered = ctx.entries.filter { LocalDate.parse(it.occurredOn) !in covered }
         // Текст недельного отчёта мог собраться кодом и содержать записи проектов с выключенным
         // ИИ — во внешний ИИ отдаём его, только если таких проектов в отчёте быть не может.
-        val weeklySafeForAi = if (projectId != null) projects[projectId.toString()]?.aiEnabled == true
-        else projects.values.none { !it.aiEnabled }
+        val weeklySafeForAi = if (projectId != null) ctx.projects[projectId.toString()]?.aiEnabled == true
+        else ctx.projects.values.none { !it.aiEnabled }
         val aiBody = if (weeklySafeForAi) {
-            val uncoveredForAi = uncovered.filter { e -> e.projectId?.let { projects[it]?.aiEnabled } ?: true }
-            aiWriter(userId, weeklyDigest(weekly, uncoveredForAi.takeIf { it.isNotEmpty() }?.let(::entriesDigest)), employer)
+            val uncoveredForAi = ctx.forAi(uncovered)
+            aiWriter(userId, weeklyDigest(weekly, uncoveredForAi.takeIf { it.isNotEmpty() }?.let { ctx.digest(it, employer) }), employer)
         } else {
             null
         }
-        val uncoveredBody = uncovered.takeIf { it.isNotEmpty() }
-            ?.let { if (employer) EmployerReport.fallbackBody(it) else fallbackBody(it) }
-        return build(aiBody ?: weeklyConcatBody(weekly, uncoveredBody))
+        val uncoveredBody = uncovered.takeIf { it.isNotEmpty() }?.let { ctx.fallback(it, employer) }
+        return ctx.build(title, employer, aiBody ?: weeklyConcatBody(weekly, uncoveredBody), weekly)
+    }
+
+    /**
+     * Пауза между запросами к ИИ при сборке месяца по неделям: бесплатный Groq пропускает
+     * ~8000 токенов в минуту, а один запрос отчёта — до ~7000. Тесты подменяют на «без паузы».
+     */
+    var aiPause: suspend () -> Unit = { kotlinx.coroutines.delay(65_000) }
+
+    /**
+     * «Отчёт работодателю» за длинный период в ДВА ШАГА — то, что раньше делалось руками
+     * (собрать недельные отчёты, вычитать, потом «месяц из недельных»):
+     * 1. по каждой календарной неделе (пн–вс, обрезанной периодом) — свой текст: из готового
+     *    недельного отчёта, если он уже есть (его, скорее всего, вычитывали), иначе ИИ пишет
+     *    его по записям недели (или код, если ИИ недоступен/выключен у проекта);
+     * 2. месяц — из этих недельных текстов, как у кнопки «из недельных отчётов».
+     * Недельные тексты нигде не сохраняются — в списке отчётов появится только итог.
+     * Нужен автоматике (Automation.kt): в последний день месяца черновик собирается сам.
+     */
+    suspend fun generateByWeeks(userId: UUID, title: String, from: LocalDate, to: LocalDate, projectId: UUID?): String {
+        val ctx = load(userId, from, to, projectId)
+        if (ctx.entries.isEmpty()) return ctx.build(title, employer = true, body = null)
+        val ready = pickWeekly(ReportRepository.list(userId), from, to, projectId)
+        val weeks = mutableListOf<WeeklySource>()
+        var aiCalls = 0
+        for (range in weekRanges(from, to)) {
+            // Готовый недельный отчёт на эту неделю (или её часть) — его и возьмём ниже, как есть.
+            if (ready.any { it.from <= range.endInclusive && it.to >= range.start }) continue
+            val days = ctx.entries.filter { LocalDate.parse(it.occurredOn) in range }
+            if (days.isEmpty()) continue
+            val forAi = ctx.forAi(days)
+            val aiBody = if (forAi.isNotEmpty()) {
+                if (aiCalls++ > 0) aiPause()
+                aiWriter(userId, EmployerReport.digest(forAi, ctx.projects), true)
+            } else {
+                null
+            }
+            weeks += WeeklySource(range.start, range.endInclusive, aiBody?.trim() ?: EmployerReport.fallbackBody(days).trim())
+        }
+        weeks.addAll(ready.filter { r -> weeks.none { it.from == r.from && it.to == r.to } })
+        weeks.sortBy { it.from }
+        if (weeks.size < 2) {
+            // Неделя одна — второй шаг ничего не добавит, а лишний запрос к ИИ дорог.
+            val only = weeks.singleOrNull()
+            return ctx.build(title, employer = true, body = only?.body)
+        }
+        if (aiCalls > 0) aiPause()
+        return fromWeekly(userId, title, projectId, employer = true, ctx = ctx, weekly = weeks)
+    }
+
+    /** Календарные недели (пн–вс) внутри [from]..[to]; крайние обрезаны периодом. */
+    fun weekRanges(from: LocalDate, to: LocalDate): List<ClosedRange<LocalDate>> {
+        val out = mutableListOf<ClosedRange<LocalDate>>()
+        var start = from
+        while (start <= to) {
+            val sunday = start.plusDays((7 - start.dayOfWeek.value).toLong())
+            val end = if (sunday > to) to else sunday
+            out += start..end
+            start = end.plusDays(1)
+        }
+        return out
     }
 
     /** Недельный отчёт как источник месячного: период и текст без шапки, цифр и хронологии. */
@@ -98,7 +189,8 @@ object ReportGenerator {
      */
     fun pickWeekly(reports: List<ReportDto>, from: LocalDate, to: LocalDate, projectId: UUID?): List<WeeklySource> {
         val picked = mutableListOf<Pair<ReportDto, ClosedRange<LocalDate>>>()
-        reports.filter { it.projectId == projectId?.toString() }
+        // Отчёт за один день — не неделя: иначе дневные отчёты автоматики подменили бы недели.
+        reports.filter { it.projectId == projectId?.toString() && it.periodStart != it.periodEnd }
             .sortedByDescending { it.createdAt }
             .forEach { r ->
                 val start = LocalDate.parse(r.periodStart)
@@ -124,9 +216,12 @@ object ReportGenerator {
             val t = line.trim()
             if (t.startsWith("## ")) {
                 val h = t.removePrefix("## ").trim().lowercase()
-                skipping = h.startsWith("цифры периода") || h.startsWith("хронология")
+                skipping = h.startsWith("цифры периода") || h.startsWith("хронология") || h.startsWith("по неделям")
             }
-            if (skipping || t.startsWith("# ") || (t.startsWith("_Период:") && t.endsWith("_"))) continue
+            // Шапка и подпись «Отчёта работодателю» (см. EmployerReport.buildMarkdown) — тоже от кода.
+            val employerFrame = t.startsWith("**Исполнитель:**") || t.startsWith("**Проект:**") ||
+                t.startsWith("**Составлен:**") || t == "---" || t == EmployerReport.FOOTER
+            if (skipping || employerFrame || t.startsWith("# ") || (t.startsWith("_Период:") && t.endsWith("_"))) continue
             out.append(line).append("\n")
         }
         return out.toString().trim()
@@ -337,7 +432,7 @@ object ReportGenerator {
      * Заголовок отчёта, если пользователь не задал свой. Раньше было «Отчёт за 2026-10-04 —
      * 2026-10-10» — машинный формат в документе для человека. Теперь:
      * весь месяц (или его начало по сегодня) — «Отчёт за октябрь 2026»; внутри месяца —
-     * «Отчёт за 4–10 октября 2026»; внутри года — «Отчёт за 20 июля — 10 октября 2026».
+     * «Отчёт за 4–10 октября 2026»; один день — «Отчёт за 19 октября 2026»; внутри года — «Отчёт за 20 июля — 10 октября 2026».
      * Отчёт по одному проекту получает его имя впереди: «DevLog: отчёт за октябрь 2026».
      */
     fun defaultTitle(
@@ -349,6 +444,7 @@ object ReportGenerator {
         val sameMonth = from.year == to.year && from.month == to.month
         val wholeMonth = sameMonth && from.dayOfMonth == 1 && (to.dayOfMonth == to.lengthOfMonth() || to == today)
         val period = when {
+            from == to -> "Отчёт за ${humanDate(from)}"
             wholeMonth -> "Отчёт за ${monthsNominative[from.monthValue - 1]} ${from.year}"
             sameMonth -> "Отчёт за ${from.dayOfMonth}–${humanDate(to)}"
             from.year == to.year -> "Отчёт за ${humanDate(from).substringBeforeLast(' ')} — ${humanDate(to)}"

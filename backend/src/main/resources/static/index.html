@@ -310,6 +310,10 @@
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { animation: none !important; transition: none !important; }
   }
+  .auto-status { display:grid; gap:4px; font-size:13px; color:var(--muted); }
+  .auto-status b { color:var(--ink); font-weight:600; }
+  pre.cmd { white-space:pre-wrap; word-break:break-all; font-size:12px; background:var(--input-bg); padding:8px 10px; border-radius:8px; margin:0; }
+  .pill-auto { margin-left:6px; font-size:11px; padding:1px 7px; border-radius:999px; background:var(--accent-bg); color:var(--accent); }
 </style>
 <script>
   // Ставим тему до отрисовки страницы, иначе при загрузке мигнёт светлым фоном.
@@ -437,6 +441,7 @@
         <button class="btn ghost sm" data-open="projectPanel"><svg class="i"><use href="#i-folder"/></svg>Проекты</button>
         <button class="btn ghost sm ro-hide" data-open="textImportPanel"><svg class="i"><use href="#i-upload"/></svg>Импорт текста</button>
         <button class="btn ghost sm ro-hide" data-open="dayFilesPanel"><svg class="i"><use href="#i-upload"/></svg>Файлы дня</button>
+        <button class="btn ghost sm ro-hide" data-open="autoPanel"><svg class="i"><use href="#i-refresh"/></svg>Автоматика</button>
       </div>
 
       <div class="toolbar">
@@ -480,6 +485,7 @@
           <button class="action ro-hide" data-open="gitlabPanel"><span class="ico"><svg class="i"><use href="#i-git"/></svg></span><span><b>Импорт с GitLab</b><small>по личному токену</small></span></button>
           <button class="action ro-hide" data-open="textImportPanel"><span class="ico"><svg class="i"><use href="#i-upload"/></svg></span><span><b>Импорт текста</b><small>лог с датами, выгрузка чата</small></span></button>
           <button class="action ro-hide" data-open="dayFilesPanel"><span class="ico"><svg class="i"><use href="#i-upload"/></svg></span><span><b>Файлы дня</b><small>ГГГГ-ММ-ДД.md — папка месяца разом</small></span></button>
+          <button class="action ro-hide" data-open="autoPanel"><span class="ico"><svg class="i"><use href="#i-refresh"/></svg></span><span><b>Автоматика</b><small>отчёты за день, неделю, месяц сами</small></span></button>
           <button class="action" data-open="projectPanel"><span class="ico"><svg class="i"><use href="#i-folder"/></svg></span><span><b>Проекты</b><small>группы записей и выключатель ИИ</small></span></button>
         </div>
       </div>
@@ -574,6 +580,38 @@
       </div>
       <span class="status" id="importTokenStatus"></span>
       <ul id="importTokenList" class="day-files-result"></ul>
+    </details>
+  </div>
+
+  <!-- Автоматика отчётов -->
+  <div id="autoPanel" class="card panel hidden" role="dialog" aria-modal="true" aria-label="Автоматика" style="width:min(640px, calc(100vw - 32px));">
+    <div class="panel-head"><b>Автоматика отчётов</b><button class="btn ghost icon" id="autoClose" title="Закрыть"><svg class="i"><use href="#i-x"/></svg></button></div>
+    <p class="desc">Сервер сам собирает «Отчёт работодателю» из записей проекта: за день — утром за вчера, за неделю — в понедельник за прошлую, за месяц — черновик в последний день месяца после 12:00. Отчёт появится в «Отчётах»; скрипт на ПК с <code>--notify</code> покажет уведомление. Перед отправкой прочитайте и поправьте.</p>
+    <div class="row2">
+      <label class="field"><span>Проект</span><select id="autoProject"><option value="">Все записи</option></select></label>
+      <label class="field"><span>Часовой пояс</span><input id="autoZone" placeholder="Europe/Moscow"></label>
+    </div>
+    <div class="chips" style="gap:14px;">
+      <label style="display:flex; align-items:center; gap:6px; cursor:pointer;"><input type="checkbox" id="autoDaily" style="width:auto;"> За день</label>
+      <label style="display:flex; align-items:center; gap:6px; cursor:pointer;"><input type="checkbox" id="autoWeekly" style="width:auto;"> За неделю</label>
+      <label style="display:flex; align-items:center; gap:6px; cursor:pointer;"><input type="checkbox" id="autoMonthly" style="width:auto;"> За месяц</label>
+    </div>
+    <label class="field"><span>Коммиты с GitHub раз в сутки — репозиторий (необязательно)</span><input id="autoRepo" placeholder="владелец/имя"></label>
+    <p class="desc" id="autoGithubHint"></p>
+    <div class="inline"><button class="btn primary" id="autoSave">Сохранить</button><span class="status" id="autoSaveStatus"></span></div>
+    <div class="auto-status" id="autoStatus"></div>
+    <p class="card-title" style="margin:6px 0 4px;">Собрать сейчас</p>
+    <div class="chips">
+      <button class="chip auto-run" data-action="day">За сегодня</button>
+      <button class="chip auto-run" data-action="week">За эту неделю</button>
+      <button class="chip auto-run" data-action="month">За этот месяц</button>
+      <button class="chip auto-run" data-action="commits">Забрать коммиты</button>
+    </div>
+    <span class="status" id="autoRunStatus"></span>
+    <details class="tokens-box">
+      <summary>Без токена GitHub — коммиты и файлы дня с ПК</summary>
+      <p class="desc">Скрипт <code>tools/push-day-files.mjs</code> читает <code>git log</code> вашей копии репозитория (только чтение) и отправляет коммиты вместе с файлами дня. Токен скрипта — в «Файлах дня». Раз в час через Планировщик заданий:</p>
+      <pre class="cmd">node push-day-files.mjs --dir "C:\папка\с\файлами дня" --git "C:\копия\репозитория" --project-name "Имя проекта" --days 14 --notify</pre>
     </details>
   </div>
 
@@ -1329,10 +1367,11 @@
     await loadConfig();
     await loadProjects();
     loadEntries();
+    openReportFromUrl();
   }
 
   // --- Модальные панели (проекты, импорт, отчёты) ---
-  const PANELS = ['projectPanel', 'githubPanel', 'gitlabPanel', 'textImportPanel', 'dayFilesPanel', 'reportPanel'];
+  const PANELS = ['projectPanel', 'githubPanel', 'gitlabPanel', 'textImportPanel', 'dayFilesPanel', 'autoPanel', 'reportPanel'];
   const PANEL_OPENERS = {
     githubPanel: () => {
       if (!$('importFrom').value) {
@@ -1350,6 +1389,7 @@
       if (!$('reportFrom').value) setPeriod('month');
       loadReportHistory();
     },
+    autoPanel: () => loadAutomation(),
     dayFilesPanel: () => {
       const sel = $('feedFilter');
       $('dayFilesProject').innerHTML = sel.value
@@ -1371,7 +1411,7 @@
   document.querySelectorAll('[data-open]').forEach(b => { b.onclick = () => openPanel(b.dataset.open); });
   $('backdrop').onclick = closePanels;
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('backdrop').classList.contains('hidden')) closePanels(); });
-  ['projectClose', 'githubClose', 'gitlabClose', 'textImportClose', 'dayFilesClose', 'reportClose'].forEach(id => { $(id).onclick = closePanels; });
+  ['projectClose', 'githubClose', 'gitlabClose', 'textImportClose', 'dayFilesClose', 'autoClose', 'reportClose'].forEach(id => { $(id).onclick = closePanels; });
 
   // --- Проекты ---
   function fillProjectSelects() {
@@ -1848,7 +1888,7 @@
       return;
     }
     box.innerHTML = reports.map(r => `<div class="rep-row" data-id="${r.id}">
-      <span class="t">${esc(r.title)}${r.shareToken ? '<span class="pill-ok">ссылка открыта</span>' : ''}
+      <span class="t">${esc(r.title)}${r.autoKind ? '<span class="pill-auto">собран сам</span>' : ''}${r.shareToken ? '<span class="pill-ok">ссылка открыта</span>' : ''}
         <small>${humanDate(r.periodStart)} — ${humanDate(r.periodEnd)}</small></span>
       <span style="display:flex; gap:6px;">
         <button class="btn ghost sm rep-open">Открыть</button>
@@ -1872,6 +1912,68 @@
         loadReportHistory();
       };
     });
+  }
+
+  // --- Автоматика отчётов (сервер сам: коммиты раз в сутки, отчёты за день/неделю/месяц) ---
+  async function loadAutomation() {
+    const sel = $('autoProject');
+    sel.innerHTML = '<option value="">Все записи</option>' + projects.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('');
+    const res = await api('/api/automation');
+    if (!res.ok) return;
+    const a = await res.json();
+    sel.value = a.projectId || '';
+    // Пояс браузера — разумная подсказка, пока пользователь ничего не сохранял.
+    $('autoZone').value = a.timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone;
+    $('autoDaily').checked = a.dailyReport;
+    $('autoWeekly').checked = a.weeklyReport;
+    $('autoMonthly').checked = a.monthlyReport;
+    $('autoRepo').value = a.githubRepo || '';
+    $('autoGithubHint').innerHTML = !a.githubLogin
+      ? 'Для коммитов с сервера укажите логин GitHub в «Импорте с GitHub» и привяжите токен. Без токена — скрипт на ПК (ниже).'
+      : a.githubTokenLinked
+        ? `Коммиты автора <b>${esc(a.githubLogin)}</b>, токен GitHub привязан. Для чужого приватного репозитория токен должен быть classic с правом <code>repo</code>.`
+        : `Автор <b>${esc(a.githubLogin)}</b>, но токен GitHub не привязан — сервер коммиты не заберёт. Привяжите classic-токен с правом <code>repo</code> в «Импорте с GitHub» или присылайте коммиты скриптом с ПК (ниже).`;
+    const line = (label, value) => value ? `<div>${label}: <b>${esc(value)}</b></div>` : '';
+    $('autoStatus').innerHTML =
+      line('Коммиты', a.lastCommitImportOn ? `${humanDate(a.lastCommitImportOn)} — ${a.lastCommitImportResult || ''}` : '') +
+      line('Последний отчёт', a.lastReportResult) +
+      line('Собраны', [a.lastDailyOn && 'день ' + humanDate(a.lastDailyOn), a.lastWeeklyOn && 'неделя с ' + humanDate(a.lastWeeklyOn), a.lastMonthly && 'месяц ' + a.lastMonthly].filter(Boolean).join(', '));
+  }
+
+  $('autoSave').onclick = async () => {
+    const body = {
+      projectId: $('autoProject').value || null,
+      githubRepo: $('autoRepo').value.trim() || null,
+      dailyReport: $('autoDaily').checked,
+      weeklyReport: $('autoWeekly').checked,
+      monthlyReport: $('autoMonthly').checked,
+      timeZone: $('autoZone').value.trim() || 'Europe/Moscow',
+    };
+    const res = await api('/api/automation', { method: 'PUT', body });
+    const data = await res.json().catch(() => ({}));
+    $('autoSaveStatus').textContent = res.ok ? 'Сохранено' : (data.error || 'Не удалось сохранить');
+    if (res.ok) loadAutomation();
+  };
+
+  document.querySelectorAll('.auto-run').forEach(b => {
+    b.onclick = async () => {
+      $('autoRunStatus').textContent = 'Запускаю…';
+      const res = await api('/api/automation/run', { method: 'POST', body: { action: b.dataset.action } });
+      const data = await res.json().catch(() => ({}));
+      $('autoRunStatus').textContent = data.message || data.error || 'Не получилось';
+      loadAutomation();
+    };
+  });
+
+  /** Ссылка из уведомления на ПК: /?report=<id> — сразу открыть этот отчёт. */
+  async function openReportFromUrl() {
+    const id = new URLSearchParams(location.search).get('report');
+    if (!id) return;
+    history.replaceState(null, '', location.pathname);
+    const res = await api('/api/reports/' + encodeURIComponent(id));
+    if (!res.ok) { toast('Отчёт не найден — возможно, его удалили'); return; }
+    openPanel('reportPanel');
+    showReport(await res.json());
   }
 
   // --- Старт: если есть токен — проверим его через /api/me ---

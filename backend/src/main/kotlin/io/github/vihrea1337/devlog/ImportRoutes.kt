@@ -1,13 +1,16 @@
 package io.github.vihrea1337.devlog
 
 import io.ktor.http.HttpStatusCode
+import io.ktor.server.application.ApplicationCall
 import io.ktor.server.auth.authenticate
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
+import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import kotlinx.serialization.Serializable
 import java.time.LocalDate
+import java.util.UUID
 
 /** Максимальный период за один импорт: у публичной активности GitHub всё равно ~90 дней. */
 private const val MAX_IMPORT_DAYS = 120L
@@ -67,8 +70,10 @@ private fun Route.commitImportRoutes() = authenticate("auth-jwt") {
         }
 
         val token = GithubTokenRepository.tokenFor(call.userId())
+        // День коммита — по поясу из «Автоматики» (как у файлов дня), иначе по UTC, как раньше.
+        val zone = AutomationRepository.zoneFor(call.userId())
         val result = runCatching {
-            if (repo != null) GithubImporter.importRepo(call.userId(), login, repo, from, to, projectId, token)
+            if (repo != null) GithubImporter.importRepo(call.userId(), login, repo, from, to, projectId, token, zone)
             else GithubImporter.import(call.userId(), login, from, to, projectId, token)
         }
             .getOrElse { error ->
@@ -170,12 +175,49 @@ private fun Route.textImportRoutes() = authenticate("auth-jwt", "import-token") 
         if (body.files.size > DayFileImporter.MAX_FILES) {
             return@post call.badRequest("Не больше ${DayFileImporter.MAX_FILES} файлов за раз")
         }
-        val projectId = body.projectId?.takeIf { it.isNotBlank() }?.let {
-            parseUuidOrNull(it) ?: return@post call.badRequest("Некорректный id проекта")
-        }
-        if (projectId != null && ProjectRepository.getById(call.userId(), projectId) == null) {
-            return@post call.badRequest("Проект не найден")
-        }
+        val projectId = call.resolveProject(body.projectId, body.projectName).getOrElse { return@post call.badRequest(it.message!!) }
         call.respond(DayFileImporter.import(call.userId(), body.files, projectId, body.overwrite))
     }
+
+    /**
+     * Коммиты из `git log` локальной копии репозитория (см. GithubImporter.importCommits) —
+     * без токена GitHub. Записи те же, что у импорта GitHub «один репозиторий».
+     */
+    post("/api/import/commits") {
+        val body = call.receive<CommitsImportRequest>()
+        val repo = GithubImporter.normalizeRepo(body.repo)
+            ?: return@post call.badRequest("Репозиторий — в виде «владелец/имя»")
+        if (body.commits.size > GithubImporter.MAX_PUSHED_COMMITS) {
+            return@post call.badRequest("Не больше ${GithubImporter.MAX_PUSHED_COMMITS} коммитов за раз — сократите период")
+        }
+        val projectId = call.resolveProject(body.projectId, body.projectName).getOrElse { return@post call.badRequest(it.message!!) }
+        val result = GithubImporter.importCommits(call.userId(), repo, body.commits, projectId)
+            ?: return@post call.badRequest("У коммита неверная дата (нужно ГГГГ-ММ-ДД), sha или пустое сообщение")
+        call.respond(ImportResultDto(result.days, result.commits, result.created, result.skipped, result.truncated, result.updated))
+    }
+
+    /**
+     * Свежие отчёты, собранные автоматикой (за 3 дня), — чтобы скрипт на ПК показал
+     * уведомление «отчёт готов». Только вид, название и ссылка, без текста: токену
+     * скрипта читать отчёты по-прежнему нельзя.
+     */
+    get("/api/import/notices") {
+        call.respond(AutomationRepository.recentNotices(call.userId()))
+    }
+}
+
+/**
+ * Проект для импорта: по id или по имени (для скриптов). Ничего не задано — Result(null),
+ * т.е. без проекта; задано, но не найдено — ошибка с текстом для 400.
+ */
+private fun ApplicationCall.resolveProject(id: String?, name: String?): Result<UUID?> {
+    id?.takeIf { it.isNotBlank() }?.let { raw ->
+        val uuid = parseUuidOrNull(raw) ?: return Result.failure(IllegalArgumentException("Некорректный id проекта"))
+        return if (ProjectRepository.getById(userId(), uuid) != null) Result.success(uuid)
+        else Result.failure(IllegalArgumentException("Проект не найден"))
+    }
+    val wanted = name?.trim()?.takeIf { it.isNotEmpty() } ?: return Result.success(null)
+    val project = ProjectRepository.list(userId()).firstOrNull { it.name.equals(wanted, ignoreCase = true) }
+        ?: return Result.failure(IllegalArgumentException("Проект «$wanted» не найден — создайте его в DevLog"))
+    return Result.success(UUID.fromString(project.id))
 }

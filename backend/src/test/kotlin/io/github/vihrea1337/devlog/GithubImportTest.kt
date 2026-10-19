@@ -95,7 +95,7 @@ class GithubImportTest {
     @BeforeTest
     fun setup() {
         Database.connect("jdbc:h2:mem:devlog_github;DB_CLOSE_DELAY=-1;MODE=PostgreSQL", driver = "org.h2.Driver")
-        transaction { SchemaUtils.create(Users, GithubIntegrations, GitlabIntegrations, Projects, Entries, EntryStructured) }
+        transaction { SchemaUtils.create(Users, GithubIntegrations, GitlabIntegrations, Projects, Entries, EntryStructured, ReportAutomation) }
         GithubImporter.fetchEvents = { _, _ -> eventsJson() }
         GithubImporter.fetchCompare = defaultFetchCompare()
         GithubImporter.fetchRepoCommits = { _, _, _, _, _, _ -> error("в этом тесте режим репозитория не ожидается") }
@@ -103,7 +103,7 @@ class GithubImportTest {
 
     @AfterTest
     fun teardown() {
-        transaction { SchemaUtils.drop(EntryStructured, Entries, Projects, GitlabIntegrations, GithubIntegrations, Users) }
+        transaction { SchemaUtils.drop(ReportAutomation, EntryStructured, Entries, Projects, GitlabIntegrations, GithubIntegrations, Users) }
     }
 
     private suspend fun token(client: HttpClient, email: String): String {

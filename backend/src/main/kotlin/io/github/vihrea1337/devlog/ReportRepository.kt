@@ -3,6 +3,7 @@ package io.github.vihrea1337.devlog
 import org.jetbrains.exposed.sql.ResultRow
 import org.jetbrains.exposed.sql.SortOrder
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
+import org.jetbrains.exposed.sql.SqlExpressionBuilder.greater
 import org.jetbrains.exposed.sql.and
 import org.jetbrains.exposed.sql.deleteWhere
 import org.jetbrains.exposed.sql.insert
@@ -24,6 +25,7 @@ object ReportRepository {
         to: LocalDate,
         format: String,
         contentMd: String,
+        autoKind: String? = null,
     ): ReportDto = transaction {
         val id = UUID.randomUUID()
         val now = Instant.now()
@@ -37,6 +39,7 @@ object ReportRepository {
             it[Reports.format] = format
             it[Reports.contentMd] = contentMd
             it[createdAt] = now
+            it[Reports.autoKind] = autoKind
         }
         ReportDto(
             id = id.toString(),
@@ -49,7 +52,16 @@ object ReportRepository {
             shareToken = null,
             createdAt = now.toString(),
             contentHtml = Markdown.toHtml(contentMd),
+            autoKind = autoKind,
         )
+    }
+
+    /** Отчёты, собранные автоматикой после [since], — новые сверху (для уведомлений на ПК). */
+    fun autoSince(userId: UUID, since: Instant): List<ReportDto> = transaction {
+        Reports.selectAll()
+            .where { (Reports.userId eq userId) and Reports.autoKind.isNotNull() and (Reports.createdAt greater since) }
+            .orderBy(Reports.createdAt to SortOrder.DESC)
+            .map { it.toDto() }
     }
 
     fun list(userId: UUID): List<ReportDto> = transaction {
@@ -118,6 +130,7 @@ object ReportRepository {
             shareToken = this[Reports.shareToken],
             createdAt = this[Reports.createdAt].toString(),
             contentHtml = Markdown.toHtml(md),
+            autoKind = this[Reports.autoKind],
         )
     }
 }

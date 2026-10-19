@@ -243,10 +243,30 @@ flowchart LR
   **Разделы разбирает код** (`DayFileImport.kt`), запись сразу `structured`, ИИ не нужен —
   работает и у проекта с выключенным ИИ. Файл без «Сделано» идёт обычным путём (очередь/черновик).
 
+- `POST /api/import/commits` `{repo, commits: [{sha, date, message}], projectId? | projectName?}` →
+  `ImportResultDto` — коммиты из `git log` локальной копии (скрипт `push-day-files.mjs --git`),
+  без токена GitHub. Записи — те же, что у GitHub «один репозиторий» (id = пользователь +
+  репозиторий + день, тот же текст), поэтому способы чередуются без дублей. До 3000 коммитов.
+- `GET /api/import/notices` → `[{reportId, kind, title, createdAt, url}]` — отчёты, собранные
+  автоматикой за 3 дня: скрипт на ПК показывает по ним уведомление Windows. Без текста отчёта.
+- У импорта файлов дня и коммитов проект можно задать именем (`projectName`, без учёта регистра).
+
+**Автоматика отчётов (`Automation.kt`, V10).** `GET/PUT /api/automation`
+`{projectId, githubRepo, dailyReport, weeklyReport, monthlyReport, timeZone}` (+ статусы `last…`),
+`POST /api/automation/run {action: commits|day|week|month}` — запуск «сейчас» (отчёт — в фоне,
+по сегодня). Фоновый цикл раз в 10 минут: после 04:00 по поясу пользователя — коммиты GitHub
+за 7 дней (режим «один репозиторий» с привязанным токеном), отчёт за вчера, в понедельник — за
+прошлую неделю; в последний день месяца после 12:00 — черновик месяца в два шага
+(`ReportGenerator.generateByWeeks`: недели — из готовых недельных отчётов или ИИ по записям
+недели, с паузой 65 с между запросами под лимит Groq; затем месяц из недель). Пропущенное
+догоняется (неделя — в любой день следующей, месяц — в первые 3 дня). Отчёты помечаются
+`auto_kind`. День коммита у GitHub считается по поясу из автоматики (раньше — UTC).
+
 **Токены для скриптов (`ImportTokens.kt`, V9).** `GET/POST /api/me/import-tokens {name}` →
 `{token, info}` (токен — один раз), `DELETE /api/me/import-tokens/{id}`. Выдаются только под
 обычным входом. Провайдер авторизации `import-token` (bearer) подключён ТОЛЬКО к
-`/api/import/day-files` и `/api/import/text` — остальное с таким токеном отвечает 401.
+`/api/import/day-files`, `/api/import/text`, `/api/import/commits`, `/api/import/notices` —
+остальное с таким токеном отвечает 401.
 В базе — SHA-256 токена. Клиент — `tools/push-day-files.mjs` (вручную, Планировщиком или
 хуком Claude Code в режиме `--hook`), см. `docs/auto-import.md`.
 

@@ -163,5 +163,29 @@ object Reports : Table("reports") {
     val contentMd = text("content_md")                      // сгенерированный ИИ Markdown
     val shareToken = varchar("share_token", 64).uniqueIndex().nullable()
     val createdAt = timestamp("created_at")
+    // Кем собран: "day" | "week" | "month" — автоматикой (Automation.kt, V10); null — руками.
+    val autoKind = varchar("auto_kind", 10).nullable()
     override val primaryKey = PrimaryKey(id)
+}
+
+/**
+ * Автоматика отчётов (см. Automation.kt, миграция V10): одна строка на пользователя —
+ * что сервер делает сам по расписанию и чем это кончилось в последний раз.
+ */
+object ReportAutomation : Table("report_automation") {
+    val userId = reference("user_id", Users.id, onDelete = ReferenceOption.CASCADE)
+    val projectId = reference("project_id", Projects.id, onDelete = ReferenceOption.SET_NULL).nullable()
+    val githubRepo = varchar("github_repo", 140).nullable()
+    val dailyReport = bool("daily_report").default(false)
+    val weeklyReport = bool("weekly_report").default(false)
+    val monthlyReport = bool("monthly_report").default(false)
+    val timeZone = varchar("time_zone", 40).default("Europe/Moscow")
+    val lastCommitImportOn = date("last_commit_import_on").nullable()
+    val lastCommitImportResult = varchar("last_commit_import_result", 300).nullable()
+    val lastDailyOn = date("last_daily_on").nullable()       // за какой день собран последний дневной
+    val lastWeeklyOn = date("last_weekly_on").nullable()     // понедельник последней собранной недели
+    val lastMonthly = varchar("last_monthly", 7).nullable()  // «2026-10»
+    val lastReportResult = varchar("last_report_result", 300).nullable()
+    val updatedAt = timestamp("updated_at")
+    override val primaryKey = PrimaryKey(userId)
 }

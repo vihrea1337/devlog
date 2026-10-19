@@ -268,6 +268,8 @@ object EmployerReport {
         val rows = summarize(
             entries.mapNotNull { e -> e.dayFile()?.let { day(e) to it.items(Kind.NUMBERS) } }.filter { it.second.isNotEmpty() },
         )
+            // Коммиты уже посчитаны по GitHub — вторая строка «Коммитов» из записей дня только путала бы.
+            .filterNot { commits > 0 && metricKey(it.label).contains("коммит") }
         rows.forEach { sb.append("| ").append(it.label.replace("|", "/")).append(" | ").append(it.value).append(" |\n") }
         if (rows.isNotEmpty()) sb.append("\n_Сложено кодом из разделов «Цифры» записей дня: за день — сумма, «к концу дня» — было → стало._\n")
         return sb.toString()
@@ -308,7 +310,55 @@ object EmployerReport {
         }
     }
 
-    /** Итоговый Markdown шаблона. [body] — текст от ИИ (или из недельных отчётов); null — собрать кодом. */
+    /**
+     * Строка «кто и по какому проекту» под периодом — руководитель видит, чей это отчёт,
+     * даже если файл переслали без письма. Пустые части пропускаются.
+     */
+    fun passportLine(author: String?, projectNames: List<String>, today: LocalDate): String =
+        listOfNotNull(
+            author?.let { "**Исполнитель:** $it" },
+            projectNames.takeIf { it.isNotEmpty() }?.let { "**Проект:** ${it.joinToString(", ")}" },
+            "**Составлен:** ${ReportGenerator.humanDate(today)}",
+        ).joinToString(" · ")
+
+    /**
+     * «По неделям»: раздел «Кратко» каждой недели одной строкой — руководителю видно, как
+     * шла работа по ходу месяца, без чтения хронологии. Неделя без «Кратко» пропускается
+     * (например, собранная кодом без ИИ); меньше двух недель — раздела нет.
+     */
+    fun weeksSection(weeks: List<ReportGenerator.WeeklySource>): String? {
+        val lines = weeks.mapNotNull { w ->
+            briefOf(w.body)?.let { "- **${ReportGenerator.weekLabel(w.from, w.to)}** — $it" }
+        }
+        if (lines.size < 2) return null
+        return "## По неделям\n\n" + lines.joinToString("\n") + "\n"
+    }
+
+    /** Текст раздела «Кратко» (заголовок любого уровня) одной строкой; null — раздела нет или он пуст. */
+    fun briefOf(md: String): String? {
+        val lines = md.lines()
+        val start = lines.indexOfFirst { line ->
+            val t = line.trim()
+            t.startsWith("#") && t.trimStart('#').trim().lowercase().startsWith("кратко")
+        }
+        if (start < 0) return null
+        val text = lines.drop(start + 1).takeWhile { !it.trimStart().startsWith("#") }
+            .joinToString(" ") { it.trim() }.replace(Regex("""\s+"""), " ").trim()
+        return text.ifEmpty { null }
+    }
+
+    /** Подпись в конце: откуда взялись разделы, а откуда цифры. */
+    const val FOOTER =
+        "_Разделы составлены по записям дня и коммитам за период. Цифры и хронология посчитаны автоматически по тем же записям._"
+
+    /**
+     * Итоговый Markdown шаблона. [body] — текст от ИИ (или из недельных отчётов); null — собрать кодом.
+     * [weeks] — недельные тексты, если отчёт собран из них (тогда добавляется «По неделям»).
+     *
+     * Вид (образец — docs/employer-report-sample.md): заголовок, период, строка «Исполнитель ·
+     * Проект · Составлен», затем Кратко / Сделано / Проверено / Передано другим и нехватки /
+     * Не сделано и почему, «По неделям», «Цифры периода», «Хронология» и подпись.
+     */
     fun buildMarkdown(
         title: String,
         from: LocalDate,
@@ -316,6 +366,9 @@ object EmployerReport {
         entries: List<EntryDto>,
         projects: Map<String, ProjectDto> = emptyMap(),
         body: String? = null,
+        author: String? = null,
+        weeks: List<ReportGenerator.WeeklySource> = emptyList(),
+        today: LocalDate = LocalDate.now(),
     ): String {
         val sb = StringBuilder()
         sb.append("# ").append(title).append("\n\n")
@@ -324,11 +377,16 @@ object EmployerReport {
             sb.append("\nЗа этот период записей нет.\n")
             return sb.toString()
         }
+        val projectNames = entries.mapNotNull { e -> e.projectId?.let { projects[it]?.name } }.distinct()
+        sb.append("\n").append(passportLine(author, projectNames, today)).append("\n")
         sb.append("\n").append((body ?: fallbackBody(entries)).trim()).append("\n")
+        weeksSection(weeks)?.let { sb.append("\n").append(it) }
         if (entries.isNotEmpty()) {
             sb.append("\n").append(numbersSection(entries, projects))
-            sb.append("\n").append(chronologySection(entries))
+            // За один день хронология повторила бы «Кратко» — её нет.
+            if (from != to) sb.append("\n").append(chronologySection(entries))
         }
+        sb.append("\n---\n\n").append(FOOTER).append("\n")
         return sb.toString()
     }
 }

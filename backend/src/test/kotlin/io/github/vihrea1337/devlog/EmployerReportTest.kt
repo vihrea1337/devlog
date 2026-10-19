@@ -132,7 +132,8 @@ class EmployerReportTest {
             "«Не сделано» — по последней записи: раннее уже неактуально")
         assertTrue(md.contains("| Коммитов (по GitHub) | 3 |"), md)
         assertTrue(md.contains("| Тестов в проекте | 84 → 120 |"), md)
-        assertTrue(md.contains("| Коммитов | 8 |"), md)
+        assertFalse(md.contains("| Коммитов |"), "коммиты уже посчитаны по GitHub — второй строки из записей дня нет: $md")
+        assertTrue(md.contains("**Составлен:**") && md.contains(EmployerReport.FOOTER), "шапка и подпись")
         assertTrue(md.contains("**14 октября 2026** — Экран прогноза · 2 коммита"), md)
         assertTrue(md.contains("**15 октября 2026** — Карта осадков · 1 коммит"), md)
     }

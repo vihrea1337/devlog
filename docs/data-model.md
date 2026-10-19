@@ -101,6 +101,7 @@ _Последние три колонки — очередь обработки 
 | content_md | text | сгенерированный ИИ Markdown |
 | share_token | varchar(64) UNIQUE, NULL | для публичной ссылки работодателю |
 | created_at | timestamptz | |
+| auto_kind | varchar(10), NULL | V10: `day` \| `week` \| `month` — собран автоматикой; NULL — по кнопке |
 
 ## github_integrations — персональный токен GitHub (Фаза 4, реализовано)
 | колонка | тип | заметки |
@@ -145,12 +146,30 @@ _Последние три колонки — очередь обработки 
 | created_at | timestamp | |
 | last_used_at | timestamp, NULL | обновляется не чаще раза в минуту |
 
-Токен (`dli_…`, 32 случайных байта) пускает только в `/api/import/day-files` и
-`/api/import/text` — для автоимпорта с ПК (`tools/push-day-files.mjs`, см. `docs/auto-import.md`).
+Токен (`dli_…`, 32 случайных байта) пускает только в `/api/import/day-files`,
+`/api/import/text`, `/api/import/commits` и `/api/import/notices` — для автоимпорта с ПК (`tools/push-day-files.mjs`, см. `docs/auto-import.md`).
+
+## report_automation — автоматика отчётов (V10, 2026-10-19)
+Одна строка на пользователя: что сервер делает сам (`Automation.kt`).
+
+| колонка | тип | заметки |
+|---|---|---|
+| user_id | uuid PK, FK→users, ON DELETE CASCADE | |
+| project_id | uuid FK→projects, NULL, ON DELETE SET NULL | куда коммиты и по чему отчёты; NULL — все записи |
+| github_repo | varchar(140), NULL | «владелец/имя»: коммиты раз в сутки (нужен токен GitHub) |
+| daily_report / weekly_report / monthly_report | boolean, default false | какие отчёты собирать самому |
+| time_zone | varchar(40), default `Europe/Moscow` | «сегодня», последний день месяца, день коммита |
+| last_commit_import_on | date, NULL | когда забирали коммиты |
+| last_commit_import_result | varchar(300), NULL | итог для веба |
+| last_daily_on | date, NULL | за какой день собран последний дневной |
+| last_weekly_on | date, NULL | понедельник последней собранной недели |
+| last_monthly | varchar(7), NULL | `2026-10` |
+| last_report_result | varchar(300), NULL | итог последней сборки |
+| updated_at | timestamp | |
 
 ## Связи
 - `users 1—∞ projects`, `users 1—∞ entries`, `users 1—∞ reports`, `users 1—1 github_integrations`,
-  `users 1—1 gitlab_integrations`, `users 1—∞ import_tokens`
+  `users 1—1 gitlab_integrations`, `users 1—∞ import_tokens`, `users 1—1 report_automation`
 - `projects 1—∞ entries` (или запись без проекта)
 - `entries 1—1 entry_structured`
 

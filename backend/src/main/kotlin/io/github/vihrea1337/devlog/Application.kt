@@ -40,6 +40,10 @@ fun main() {
         println("Воркер ИИ не запущен: нет ключа GROQ_API_KEY — записи останутся в очереди.")
     }
 
+    // Автоматика отчётов (Automation.kt): коммиты раз в сутки, отчёты за день/неделю/месяц.
+    // Работает и без ИИ — тогда отчёты собирает код.
+    AutomationWorker().start()
+
     val port = System.getenv("PORT")?.toIntOrNull() ?: 8080
     val host = System.getenv("HOST") ?: "127.0.0.1"
     requireSecureSecret(host)
@@ -121,6 +125,8 @@ fun Application.module() {
         importRoutes()
         // Токены для скриптов (автоимпорт файлов дня без входа паролем).
         importTokenRoutes()
+        // Автоматика отчётов: настройки и ручной запуск.
+        automationRoutes()
         // Веб-страница из resources/static (index.html). Данные за ней всё равно под токеном.
         staticResources("/", "static")
     }

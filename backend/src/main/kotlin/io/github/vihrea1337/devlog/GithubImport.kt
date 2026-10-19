@@ -14,6 +14,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import java.time.Instant
 import java.time.LocalDate
+import java.time.ZoneId
 import java.time.ZoneOffset
 import java.util.UUID
 
@@ -285,11 +286,18 @@ object GithubImporter {
     }
 
     /**
-     * Разобрать страницу `/repos/{repo}/commits` в коммиты по дням (по дате АВТОРА коммита,
-     * в UTC — как и у ленты событий). Merge-коммиты (больше одного родителя) пропускаем:
-     * «Merge branch …» ничего не говорит о работе. Чистая функция — тестируется без сети.
+     * Разобрать страницу `/repos/{repo}/commits` в коммиты по дням (по дате АВТОРА коммита
+     * в поясе [zone]: GitHub отдаёт время в UTC, а работа идёт по местным часам — ночной
+     * коммит в 02:00 по Москве иначе уехал бы во вчера). Merge-коммиты (больше одного
+     * родителя) пропускаем: «Merge branch …» ничего не говорит о работе. Чистая функция.
      */
-    fun parseRepoCommits(body: String, repo: String, from: LocalDate, to: LocalDate): List<Pair<LocalDate, GithubCommit>> {
+    fun parseRepoCommits(
+        body: String,
+        repo: String,
+        from: LocalDate,
+        to: LocalDate,
+        zone: ZoneId = ZoneOffset.UTC,
+    ): List<Pair<LocalDate, GithubCommit>> {
         val array = runCatching { json.parseToJsonElement(body).jsonArray }.getOrElse { return emptyList() }
         return array.mapNotNull { element ->
             val obj = element.jsonObject
@@ -299,7 +307,7 @@ object GithubImporter {
             val date = commit["author"]?.jsonObject?.get("date")?.jsonPrimitive?.content
                 ?: commit["committer"]?.jsonObject?.get("date")?.jsonPrimitive?.content
                 ?: return@mapNotNull null
-            val day = runCatching { Instant.parse(date).atZone(ZoneOffset.UTC).toLocalDate() }.getOrNull()
+            val day = runCatching { Instant.parse(date).atZone(zone).toLocalDate() }.getOrNull()
                 ?: return@mapNotNull null
             val parents = runCatching { obj["parents"]?.jsonArray?.size }.getOrNull() ?: 1
             if (sha.isEmpty() || message.isEmpty() || parents > 1 || day < from || day > to) null
@@ -324,12 +332,17 @@ object GithubImporter {
         to: LocalDate,
         projectId: UUID?,
         token: String? = null,
+        zone: ZoneId = ZoneOffset.UTC,
     ): ImportResult {
         val byDay = sortedMapOf<LocalDate, MutableList<GithubCommit>>()
         var truncated = false
+        // Запрашиваем на день шире с обеих сторон: since/until у GitHub — в UTC, а дни
+        // считаем в поясе пользователя; лишнее отсечёт parseRepoCommits по [from]..[to].
+        val fetchFrom = if (zone == ZoneOffset.UTC) from else from.minusDays(1)
+        val fetchTo = if (zone == ZoneOffset.UTC) to else to.plusDays(1)
         for (page in 1..MAX_REPO_PAGES) {
             val body = try {
-                fetchRepoCommits(repo, login, from, to, page, token)
+                fetchRepoCommits(repo, login, fetchFrom, fetchTo, page, token)
             } catch (e: GithubRateLimitException) {
                 // Лимит GitHub посреди страниц — сохраняем то, что уже собрали.
                 if (page == 1) throw IllegalStateException("GitHub временно отказывает в запросах (превышен лимит). Попробуйте позже")
@@ -337,19 +350,54 @@ object GithubImporter {
                 break
             }
             val pageSize = runCatching { json.parseToJsonElement(body).jsonArray.size }.getOrDefault(0)
-            parseRepoCommits(body, repo, from, to).forEach { (day, c) -> byDay.getOrPut(day) { mutableListOf() }.add(c) }
+            parseRepoCommits(body, repo, from, to, zone).forEach { (day, c) -> byDay.getOrPut(day) { mutableListOf() }.add(c) }
             if (pageSize < 100) break
             if (page == MAX_REPO_PAGES) truncated = true
         }
         // GitHub отдаёт коммиты от новых к старым — в записи дня удобнее в порядке работы.
         val days = byDay.mapValues { (_, list) -> list.distinctBy { it.sha }.reversed() }
-        return saveDays(userId, days, truncated) { day, commits ->
-            ImportedEntries.Prepared(
-                id = repoEntryIdFor(userId, repo, day),
-                input = ValidEntryInput(day, buildEntryText(day, commits, repo), projectId, "github", null),
-                source = "github:$repo",
-            )
+        return saveRepoDays(userId, repo, days, projectId, truncated)
+    }
+
+    /** Сколько коммитов принимаем за один запрос с ПК: год работы с запасом. */
+    const val MAX_PUSHED_COMMITS = 3000
+
+    /**
+     * Коммиты, присланные с ПК (`git log` локальной копии, см. tools/push-day-files.mjs) —
+     * способ без токена GitHub: чужой приватный репозиторий виден локальной копии и так.
+     * Дата коммита уже посчитана на ПК по часам автора. Записи — ровно те же, что у
+     * [importRepo] (тот же id на репозиторий и день, тот же текст), поэтому способы можно
+     * чередовать: повтор с теми же коммитами ничего не меняет.
+     *
+     * Порядок коммитов внутри дня — как прислали (скрипт шлёт от старых к новым).
+     * null — в списке есть коммит с неверной датой или без sha/сообщения.
+     */
+    fun importCommits(userId: UUID, repo: String, commits: List<CommitDto>, projectId: UUID?): ImportResult? {
+        val byDay = sortedMapOf<LocalDate, MutableList<GithubCommit>>()
+        for (c in commits) {
+            val day = parseDateOrNull(c.date) ?: return null
+            val sha = c.sha.trim().lowercase()
+            val message = c.message.trim()
+            if (!SHA.matches(sha) || message.isEmpty()) return null
+            byDay.getOrPut(day) { mutableListOf() }.add(GithubCommit(repo, message, sha))
         }
+        return saveRepoDays(userId, repo, byDay.mapValues { (_, list) -> list.distinctBy { it.sha } }, projectId, truncated = false)
+    }
+
+    private val SHA = Regex("""^[0-9a-f]{7,40}$""")
+
+    private fun saveRepoDays(
+        userId: UUID,
+        repo: String,
+        days: Map<LocalDate, List<GithubCommit>>,
+        projectId: UUID?,
+        truncated: Boolean,
+    ) = saveDays(userId, days, truncated) { day, commits ->
+        ImportedEntries.Prepared(
+            id = repoEntryIdFor(userId, repo, day),
+            input = ValidEntryInput(day, buildEntryText(day, commits, repo), projectId, "github", null),
+            source = "github:$repo",
+        )
     }
 
     /** Общая часть обоих режимов: записи по дням через ImportedEntries и подсчёт итогов. */

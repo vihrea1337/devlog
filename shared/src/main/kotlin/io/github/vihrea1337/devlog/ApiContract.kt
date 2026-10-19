@@ -242,6 +242,8 @@ data class ReportDto(
      * а не дублируется на JavaScript в браузере и на Kotlin в приложении.
      */
     val contentHtml: String = "",
+    /** Собран автоматикой: "day" | "week" | "month"; null — собран по кнопке. */
+    val autoKind: String? = null,
 )
 
 /** Тело PUT /api/reports/{id}: правка отчёта перед отправкой работодателю. */
@@ -312,6 +314,11 @@ data class DayFilesImportRequest(
      * false: повторный (в т.ч. автоматический) импорт не должен молча терять ручные правки.
      */
     val overwrite: Boolean = false,
+    /**
+     * Проект по имени (без учёта регистра) — для скриптов: «--project-name Weather» понятнее
+     * id. Используется, только если projectId не задан; проекта с таким именем нет — 400.
+     */
+    val projectName: String? = null,
 )
 
 /**
@@ -387,3 +394,82 @@ data class CreatedImportTokenDto(val token: String, val info: ImportTokenDto)
 /** Ответ POST /api/reports/{id}/export-github: куда именно записали. */
 @Serializable
 data class ExportGithubResultDto(val repo: String, val path: String)
+
+// --- Коммиты, присланные с ПК (git log локальной копии) — без токена GitHub ---
+
+/** Один коммит из `git log`: дата — день по часам автора (ГГГГ-ММ-ДД), сообщение целиком. */
+@Serializable
+data class CommitDto(val sha: String, val date: String, val message: String)
+
+/**
+ * Тело POST /api/import/commits. Скрипт на ПК читает `git log` своей копии репозитория и
+ * присылает коммиты — так коммиты чужого приватного репозитория попадают в DevLog без
+ * токена GitHub. Записи те же, что у импорта GitHub в режиме «один репозиторий» (тот же id
+ * на день), поэтому оба способа можно чередовать без дублей.
+ */
+@Serializable
+data class CommitsImportRequest(
+    /** «владелец/имя» — для ссылок на коммиты и id записи дня. */
+    val repo: String,
+    val commits: List<CommitDto>,
+    val projectId: String? = null,
+    val projectName: String? = null,
+)
+
+// --- Автоматика отчётов: что сервер делает сам (коммиты раз в сутки, отчёты за день/неделю/месяц) ---
+
+@Serializable
+data class AutomationDto(
+    /** Проект: в него идут коммиты, по нему собираются отчёты. null — все записи. */
+    val projectId: String? = null,
+    /** «владелец/имя»: раз в сутки забирать коммиты (нужен токен GitHub). null — выключено. */
+    val githubRepo: String? = null,
+    /** Каждое утро — «Отчёт работодателю» за вчера. */
+    val dailyReport: Boolean = false,
+    /** В понедельник утром — за прошлую неделю (пн–вс). */
+    val weeklyReport: Boolean = false,
+    /** В последний день месяца — черновик за месяц (из недель). */
+    val monthlyReport: Boolean = false,
+    /** Пояс пользователя (IANA, «Europe/Moscow»): по нему «сегодня» и день коммита. */
+    val timeZone: String = "Europe/Moscow",
+    val lastCommitImportOn: String? = null,
+    val lastCommitImportResult: String? = null,
+    val lastDailyOn: String? = null,
+    val lastWeeklyOn: String? = null,
+    val lastMonthly: String? = null,
+    /** Итог последней сборки отчёта автоматикой (или ручного запуска). */
+    val lastReportResult: String? = null,
+    /** Привязан ли токен GitHub (без него серверный импорт коммитов не работает). */
+    val githubTokenLinked: Boolean = false,
+    /** Логин GitHub из профиля — автор, чьи коммиты берём. */
+    val githubLogin: String? = null,
+)
+
+/** Тело PUT /api/automation. */
+@Serializable
+data class UpdateAutomation(
+    val projectId: String? = null,
+    val githubRepo: String? = null,
+    val dailyReport: Boolean = false,
+    val weeklyReport: Boolean = false,
+    val monthlyReport: Boolean = false,
+    val timeZone: String = "Europe/Moscow",
+)
+
+/**
+ * Тело POST /api/automation/run: «commits» — забрать коммиты сейчас; «day» — отчёт за
+ * сегодня, «week» — за текущую неделю по сегодня, «month» — за текущий месяц по сегодня.
+ */
+@Serializable
+data class RunAutomation(val action: String)
+
+/** Итог ручного запуска: человеческая строка и id отчёта, если он уже собран. */
+@Serializable
+data class AutomationRunResult(val message: String, val reportId: String? = null)
+
+/**
+ * Свежий отчёт, собранный автоматикой, — для уведомления на ПК (GET /api/import/notices,
+ * доступно и токену скрипта): только вид, название и ссылка, без текста отчёта.
+ */
+@Serializable
+data class ImportNoticeDto(val reportId: String, val kind: String, val title: String, val createdAt: String, val url: String)
