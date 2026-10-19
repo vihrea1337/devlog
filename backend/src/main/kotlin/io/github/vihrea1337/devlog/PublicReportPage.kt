@@ -45,7 +45,9 @@ object PublicReportPage {
         }
 
         val body = sections.joinToString("\n") { sec ->
-            if (sec.title.equals("Цифры периода", ignoreCase = true)) return@joinToString ""
+            // Базовую таблицу заменяют плитки. Но у «Отчёта работодателю» в ней ещё и цифры,
+            // сложенные из записей дня (тесты, коммиты, сборки), — их плитки не покажут, оставляем.
+            if (sec.title.equals("Цифры периода", ignoreCase = true) && "Сложено кодом" !in sec.body) return@joinToString ""
             val cls = when (sec.title.lowercase()) {
                 "кратко" -> "sec-lead"
                 "хронология" -> "sec-timeline"
