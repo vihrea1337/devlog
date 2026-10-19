@@ -21,6 +21,8 @@
 // --hook — режим хука Claude Code (PostToolUse на Write|Edit): JSON о записанном файле
 //          приходит на вход, отправляется только этот файл и только если он лежит в --dir и
 //          в его имени есть дата. Остальные правки хук молча пропускает. См. docs/auto-import.md.
+// --log <файл> — дописывать вывод в файл (для запуска Планировщиком, где окна нет):
+//          видно, что ушло и почему не вышло. Файл не растёт бесконечно — хранится ~1000 строк.
 //
 // Токен выпускается в вебе: «Файлы дня» → «Токен для скриптов». Он умеет только импорт —
 // читать и удалять записи им нельзя. Передаётся ТОЛЬКО переменной окружения, не аргументом:
@@ -54,6 +56,7 @@ function parseArgs(argv) {
     else if (a === '--days') args.days = Number(next());
     else if (a === '--url') args.url = next();
     else if (a === '--notify') args.notify = true;
+    else if (a === '--log') args.log = next();
     else if (a === '--overwrite') args.overwrite = true;
     else if (a === '--dry-run') args.dryRun = true;
     else if (a === '--hook') args.hook = true;
@@ -194,9 +197,31 @@ $app = '{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\WindowsPowerShell\\v1.0\\powersh
   return r.status === 0;
 }
 
+// --- Журнал ---
+
+/** Дублировать console.log/error в файл [path]; при выходе обрезать журнал до последних строк. */
+function startLog(path) {
+  const lines = [];
+  const stamp = new Date().toLocaleString('sv-SE'); // «2026-10-19 22:17:23» по местному времени
+  for (const name of ['log', 'error']) {
+    const orig = console[name].bind(console);
+    console[name] = (...a) => { lines.push(`${stamp} ${a.join(' ')}`); orig(...a); };
+  }
+  process.on('exit', code => {
+    lines.push(`${stamp} код выхода ${code}`);
+    let old = [];
+    try { old = readFileSync(path, 'utf8').split('\n').filter(Boolean); } catch {}
+    try {
+      mkdirSync(join(path, '..'), { recursive: true });
+      writeFileSync(path, [...old, ...lines].slice(-1000).join('\n') + '\n');
+    } catch {}
+  });
+}
+
 // --- main ---
 
 const args = parseArgs(process.argv.slice(2));
+if (args.log) startLog(args.log);
 const url = (args.url || process.env.DEVLOG_URL || DEFAULT_URL).replace(/\/+$/, '');
 const since = new Date(Date.now() - args.days * 86400_000).toISOString().slice(0, 10);
 const project = { projectId: args.project || null, projectName: args.project ? null : (args.projectName || null) };

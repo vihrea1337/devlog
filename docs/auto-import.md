@@ -59,8 +59,10 @@ node tools\push-day-files.mjs --dir "C:\путь\к\записям" --git "C:\п
 
 ```powershell
 $node = (Get-Command node).Source
-$args = 'C:\Users\<вы>\Desktop\Projects\devlog\tools\push-day-files.mjs --dir "C:\путь\к\записям" --git "C:\путь\к\копии" --project-name Weather --days 14 --notify'
-$action   = New-ScheduledTaskAction -Execute $node -Argument $args
+$script = 'C:\Users\<вы>\Desktop\Projects\devlog\tools\push-day-files.mjs'
+# conhost --headless — без мигающего чёрного окна раз в час.
+$arg = "--headless `"$node`" `"$script`" --dir `"C:\путь\к\записям`" --git `"C:\путь\к\копии`" --project-name Weather --days 40 --notify --log `"$env:LOCALAPPDATA\DevLog\push.log`""
+$action   = New-ScheduledTaskAction -Execute "$env:WINDIR\System32\conhost.exe" -Argument $arg
 $trigger  = New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval (New-TimeSpan -Hours 1)
 $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -DontStopIfGoingOnBatteries -AllowStartIfOnBatteries
 Register-ScheduledTask -TaskName "DevLog — автоимпорт" -Action $action -Trigger $trigger -Settings $settings
@@ -68,6 +70,7 @@ Register-ScheduledTask -TaskName "DevLog — автоимпорт" -Action $acti
 
 `--notify` показывает уведомление Windows, когда автоматика собрала новый отчёт: нажатие
 открывает его в браузере. Показанные запоминаются в `%LOCALAPPDATA%\DevLog\notified.json`.
+Окна у задачи нет, поэтому итог каждого запуска — в журнале `--log` (`push.log`).
 
 ## 5. Отчёты сами — «Автоматика» в вебе
 
